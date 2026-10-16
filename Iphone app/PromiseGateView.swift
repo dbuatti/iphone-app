@@ -23,7 +23,6 @@ struct PromiseGateView: View {
     }
 
     @State private var stage: Stage = .gate
-    @State private var holdProgress: CGFloat = 0
     @State private var isHolding = false
     @State private var cooldownStart: Date?
 
@@ -214,7 +213,6 @@ struct PromiseGateView: View {
 
             Button {
                 stage = .gate
-                holdProgress = 0
                 isHolding = false
                 cooldownStart = nil
             } label: {
@@ -239,7 +237,13 @@ struct PromiseGateView: View {
             GeometryReader { geo in
                 RoundedRectangle(cornerRadius: 17)
                     .fill(accent.opacity(0.85))
-                    .frame(width: geo.size.width * holdProgress)
+                    .frame(
+                        width: geo.size.width * (isHolding ? 1 : 0)
+                    )
+                    .animation(
+                        .linear(duration: isHolding ? holdDuration : 0.2),
+                        value: isHolding
+                    )
             }
             .clipShape(RoundedRectangle(cornerRadius: 17))
 
@@ -249,42 +253,19 @@ struct PromiseGateView: View {
         }
         .frame(height: 58)
         .contentShape(RoundedRectangle(cornerRadius: 17))
-        .gesture(
-            DragGesture(minimumDistance: 0)
-                .onChanged { _ in
-                    guard !isHolding else { return }
-                    isHolding = true
-                    holdProgress = 0
-
-                    withAnimation(.linear(duration: holdDuration)) {
-                        holdProgress = 1
-                    }
-                }
-                .onEnded { _ in
-                    isHolding = false
-
-                    if holdProgress >= 0.99 {
-                        cooldownStart = Date()
-                    } else {
-                        withAnimation(.easeOut(duration: 0.2)) {
-                            holdProgress = 0
-                        }
-                    }
-                }
-        )
+        // The fill animation above is cosmetic. The only thing that can
+        // unlock the button is `perform`, which SwiftUI fires strictly after
+        // `minimumDuration` of continuous pressing — so a quick tap, or a
+        // finger that drifts away, cannot get through.
         .onLongPressGesture(
             minimumDuration: holdDuration,
-            maximumDistance: 60,
-            perform: {
-                if cooldownStart == nil {
-                    cooldownStart = Date()
-                }
-                holdProgress = 1
-            },
-            onPressingChanged: { pressing in
-                isHolding = pressing
-            }
-        )
+            maximumDistance: 60
+        ) {
+            isHolding = false
+            cooldownStart = Date()
+        } onPressingChanged: { pressing in
+            isHolding = pressing
+        }
     }
 
     private func formatTime(_ interval: TimeInterval) -> String {

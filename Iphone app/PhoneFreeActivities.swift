@@ -181,32 +181,41 @@ enum PhoneFreeAdvisor {
         from reflections: [PhoneFreeReflection],
         limit: Int = 3
     ) -> [PhoneFreeActivity] {
-        let scored = PhoneFreeActivityLibrary.all.map { activity
-            -> (activity: PhoneFreeActivity, score: Double) in
+        let scored = PhoneFreeActivityLibrary.all
+            .enumerated()
+            .map { index, activity
+                -> (activity: PhoneFreeActivity, score: Double, index: Int) in
 
-            let matching = reflections.filter { $0.activityID == activity.id }
+                let matching = reflections.filter { $0.activityID == activity.id }
 
-            guard !matching.isEmpty else {
-                // Never tried: keep it in the running for variety.
-                return (activity, 1.5)
+                guard !matching.isEmpty else {
+                    // Never tried: keep it in the running for variety.
+                    return (activity, 1.5, index)
+                }
+
+                let averageDifficulty =
+                    Double(matching.map(\.difficulty).reduce(0, +))
+                    / Double(matching.count)
+
+                let averageEnjoyment =
+                    Double(matching.map(\.enjoyment).reduce(0, +))
+                    / Double(matching.count)
+
+                let challengeFit = 2.0 - abs(averageDifficulty - targetDifficulty)
+                let enjoymentFit = (averageEnjoyment - 3.0) * 0.4
+
+                return (activity, challengeFit + enjoymentFit, index)
             }
 
-            let averageDifficulty =
-                Double(matching.map(\.difficulty).reduce(0, +))
-                / Double(matching.count)
-
-            let averageEnjoyment =
-                Double(matching.map(\.enjoyment).reduce(0, +))
-                / Double(matching.count)
-
-            let challengeFit = 2.0 - abs(averageDifficulty - targetDifficulty)
-            let enjoymentFit = (averageEnjoyment - 3.0) * 0.4
-
-            return (activity, challengeFit + enjoymentFit)
-        }
-
+        // `sorted(by:)` is not guaranteed to be stable, so break ties by
+        // library order. Without this, activities that all score the same
+        // (which is the case before any reflection) appear in a random order.
         return scored
-            .sorted { $0.score > $1.score }
+            .sorted {
+                $0.score == $1.score
+                    ? $0.index < $1.index
+                    : $0.score > $1.score
+            }
             .prefix(limit)
             .map(\.activity)
     }
