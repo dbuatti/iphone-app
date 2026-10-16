@@ -105,6 +105,8 @@ private struct SharedHistoryEvent: Decodable {
 }
 
 struct PhoneFreeWidgetEntryView: View {
+    @Environment(\.widgetFamily) private var family
+
     let entry: PhoneFreeEntry
 
     private let lavender = Color(
@@ -125,6 +127,125 @@ struct PhoneFreeWidgetEntryView: View {
     }
 
     var body: some View {
+        switch family {
+        case .accessoryCircular:
+            accessoryCircular
+        case .accessoryRectangular:
+            accessoryRectangular
+        case .accessoryInline:
+            accessoryInline
+        default:
+            mediumView
+        }
+    }
+
+    // MARK: - Lock Screen (accessory) families
+    //
+    // These are the surfaces the user sees *before* they open anything, which
+    // is the whole point: the number has to be in front of them at the moment
+    // they reach for the phone. Unlike a Live Activity they never expire.
+
+    /// The date the accessory families count from: a goal's end when one is
+    /// running, otherwise the moment of the last confirmed phone use.
+    private var accessoryDate: Date? {
+        if activeGoal, let goalEnd = entry.goalEnd {
+            return goalEnd
+        }
+        return entry.lastCheckIn
+    }
+
+    private var accessoryIsGoal: Bool {
+        activeGoal && entry.goalEnd != nil
+    }
+
+    private var accessorySymbol: String {
+        accessoryIsGoal ? "hourglass" : "iphone.slash"
+    }
+
+    private var accessoryCaption: String {
+        accessoryIsGoal
+            ? "TIME LEFT TO YOUR GOAL"
+            : "SINCE YOU LAST USED YOUR PHONE"
+    }
+
+    private var accessoryCircular: some View {
+        ZStack {
+            AccessoryWidgetBackground()
+
+            if let date = accessoryDate {
+                VStack(spacing: 0) {
+                    Image(systemName: accessorySymbol)
+                        .font(.system(size: 10, weight: .semibold))
+
+                    Text(date, style: .timer)
+                        .font(
+                            .system(
+                                size: 13,
+                                weight: .semibold,
+                                design: .rounded
+                            )
+                        )
+                        .monospacedDigit()
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.45)
+                }
+            } else {
+                Image(systemName: "iphone.slash")
+                    .font(.system(size: 20, weight: .semibold))
+            }
+        }
+        .widgetURL(URL(string: "phonefree://goal")!)
+        .containerBackground(Color.clear, for: .widget)
+    }
+
+    private var accessoryRectangular: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Text(accessoryCaption)
+                .font(.system(size: 11, weight: .semibold))
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
+
+            if let date = accessoryDate {
+                Text(date, style: .timer)
+                    .font(
+                        .system(
+                            size: 22,
+                            weight: .semibold,
+                            design: .rounded
+                        )
+                    )
+                    .monospacedDigit()
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.6)
+            } else {
+                Text("Start a phone-free goal")
+                    .font(.system(size: 20, weight: .semibold))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.6)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .widgetURL(URL(string: "phonefree://goal")!)
+        .containerBackground(Color.clear, for: .widget)
+    }
+
+    private var accessoryInline: some View {
+        Group {
+            if let date = accessoryDate {
+                Label {
+                    Text(date, style: .timer)
+                } icon: {
+                    Image(systemName: accessorySymbol)
+                }
+            } else {
+                Label("Start a phone-free goal", systemImage: "iphone.slash")
+            }
+        }
+    }
+
+    // MARK: - Home Screen (system) families
+
+    private var mediumView: some View {
         VStack(alignment: .leading, spacing: 7) {
             header
 
@@ -260,8 +381,15 @@ struct PhoneFreeWidget: Widget {
             PhoneFreeWidgetEntryView(entry: entry)
         }
         .configurationDisplayName("The Pause")
-        .description("Your phone-free goal countdown.")
-        .supportedFamilies([.systemMedium])
+        .description(
+            "Your away counter, on the Home Screen and the Lock Screen."
+        )
+        .supportedFamilies([
+            .systemMedium,
+            .accessoryCircular,
+            .accessoryRectangular,
+            .accessoryInline,
+        ])
     }
 }
 
@@ -277,6 +405,54 @@ struct PhoneFreeWidget: Widget {
         lastCheckIn: Date().addingTimeInterval(-3600)
     )
 
+    PhoneFreeEntry(
+        date: .now,
+        goalEnd: nil,
+        goalActive: false,
+        goalsCompletedToday: 1,
+        protectedMinutesToday: 20,
+        lastCheckIn: Date().addingTimeInterval(-7200)
+    )
+}
+
+#Preview(as: .accessoryRectangular) {
+    PhoneFreeWidget()
+} timeline: {
+    PhoneFreeEntry(
+        date: .now,
+        goalEnd: nil,
+        goalActive: false,
+        goalsCompletedToday: 1,
+        protectedMinutesToday: 20,
+        lastCheckIn: Date().addingTimeInterval(-7200)
+    )
+
+    PhoneFreeEntry(
+        date: .now,
+        goalEnd: Date().addingTimeInterval(600),
+        goalActive: true,
+        goalsCompletedToday: 2,
+        protectedMinutesToday: 35,
+        lastCheckIn: Date().addingTimeInterval(-3600)
+    )
+}
+
+#Preview(as: .accessoryCircular) {
+    PhoneFreeWidget()
+} timeline: {
+    PhoneFreeEntry(
+        date: .now,
+        goalEnd: nil,
+        goalActive: false,
+        goalsCompletedToday: 1,
+        protectedMinutesToday: 20,
+        lastCheckIn: Date().addingTimeInterval(-7200)
+    )
+}
+
+#Preview(as: .accessoryInline) {
+    PhoneFreeWidget()
+} timeline: {
     PhoneFreeEntry(
         date: .now,
         goalEnd: nil,
