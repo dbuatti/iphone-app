@@ -68,6 +68,20 @@ struct ContentView: View {
         .task {
             store.handleBecameActive()
             store.syncLockScreenCounter()
+
+            // Categories must exist before any reminder can offer its
+            // "Start phone-free" action. Permission is requested inside the
+            // windows screen, where the user can see what it is for.
+            PhoneFreeWindowScheduler.shared.setupCategories()
+            PhoneFreeWindowScheduler.shared.reschedule(store.windows)
+        }
+        .onReceive(
+            NotificationCenter.default.publisher(
+                for: .phoneFreeStartFromReminder
+            )
+        ) { _ in
+            store.startGoalFromReminder()
+            tab = .away
         }
         .onReceive(
             Timer.publish(every: 1, on: .main, in: .common).autoconnect()

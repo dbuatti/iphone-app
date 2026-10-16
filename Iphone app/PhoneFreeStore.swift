@@ -66,13 +66,11 @@ final class PhoneFreeStore {
 
     var plan: [PlannedActivity] = []
     var reflections: [PhoneFreeReflection] = []
+    var windows: [PhoneFreeWindow] = []
 
     /// The last moment the user *gave in* and used the phone. Everything the
     /// app shows counts up from here. Persisted.
     var lastCheckIn: Date?
-
-    /// Whether the always-on counter is allowed on the Lock Screen.
-    var lockScreenCounterEnabled = true
 
     // MARK: Gate presentation
 
@@ -161,9 +159,21 @@ final class PhoneFreeStore {
     // MARK: - Goal actions
 
     func startGoal() {
+        let minutes = effectiveGoalMinutes
+
+        startGoal(
+            minutes: minutes,
+            note: plan.isEmpty
+                ? "\(minutes)-minute goal"
+                : "\(minutes)-minute plan (\(plan.count) activities)"
+        )
+    }
+
+    /// The single place a goal actually begins, so a plain goal and one opened
+    /// from a window reminder cannot drift apart.
+    private func startGoal(minutes: Int, note: String) {
         guard !goalActive else { return }
 
-        let minutes = effectiveGoalMinutes
         let now = Date()
         let end = now.addingTimeInterval(TimeInterval(minutes * 60))
 
@@ -179,9 +189,7 @@ final class PhoneFreeStore {
             PhoneFreeEvent(
                 timestamp: now,
                 kind: PhoneFreeEventKind.goalStarted,
-                note: plan.isEmpty
-                    ? "\(minutes)-minute goal"
-                    : "\(minutes)-minute plan (\(plan.count) activities)",
+                note: note,
                 duration: nil
             )
         )
@@ -194,6 +202,39 @@ final class PhoneFreeStore {
             end: end,
             segments: buildSegments(from: now)
         )
+    }
+
+    /// Called when the user taps a phone-free window reminder. They have
+    /// already said yes, so the gates that ask them to think twice are skipped.
+    ///
+    /// When the tap lands inside the window, the goal runs until the window
+    /// ends — "no phone 22:00 – 07:00" should mean exactly that. A stale
+    /// reminder falls back to whatever length the screen was last set to.
+    func startGoalFromReminder(windowID: String?) {
+        showingCheckInGate = false
+        showingPromiseGate = false
+        justRestartedFrom = nil
+
+        // They are not being asked about ending anything — they are starting.
+        promiseGateShownThisSession = true
+
+        guard !goalActive else { return }
+
+        let window = windowID
+            .flatMap(UUID.init(uuidString:))
+            .flatMap { id in windows.first(where: { $0.id == id }) }
+
+        if let window, let end = window.endIfInside(at: Date()) {
+            startGoal(
+                minutes: max(1, Int(end.timeIntervalSinceNow / 60)),
+                note: window.displayName
+                    + " · until "
+                    + end.formatted(date: .omitted, time: .shortened)
+            )
+            return
+        }
+
+        startGoal()
     }
 
     /// Asked for by the "End goal early" button. Shows friction rather than
@@ -597,11 +638,16 @@ final class PhoneFreeStore {
         PhoneFreeAdvisor.hardest(from: reflections)
     }
 
-    // MARK: - The Lock Screen counter
+    // MARK: - The Lock Screen countdown
 
-    /// Makes the Lock Screen show what the app is about: how long since the
-    /// phone was last used. With no goal running there is nothing to count
-    /// down, so the counter counts up instead.
+    /// Keeps the Lock Screen in step with the app.
+    ///
+    /// The Live Activity is now *only* for a running goal — it counts down and
+    /// it expires after a few hours, which is what Live Activities are for. The
+    /// always-on "since you last used your phone" counter lives on the Lock
+    /// Screen widget instead: it never expires, it is not an App Review
+    /// problem, and it does not make the app itself a reason to pick up the
+    /// phone.
     ///
     /// Safe to call repeatedly — it refreshes an existing activity rather than
     /// stacking up new ones.
@@ -619,20 +665,40 @@ final class PhoneFreeStore {
             return
         }
 
-        guard lockScreenCounterEnabled, let lastCheckIn else {
-            PhoneFreeLiveActivityManager.shared.endCheckIn()
-            return
-        }
-
-        PhoneFreeLiveActivityManager.shared.startCheckIn(since: lastCheckIn)
+        // No goal running: there is no Live Activity to show. End any that
+        // survived from an earlier goal, and let the widget carry the number.
+        PhoneFreeLiveActivityManager.shared.endCheckIn()
     }
 
     // MARK: - Data
+
+    /// The windows a fresh install starts with: the overnight one on, because
+    /// night is where the most phone use happens, and lunch ready to switch on.
+    private static func defaultWindows() -> [PhoneFreeWindow] {
+        [
+            PhoneFreeWindow(
+                label: "Evening wind-down",
+                startHour: 22,
+                startMinute: 0,
+                endHour: 7,
+                endMinute: 0
+            ),
+            PhoneFreeWindow(
+                enabled: false,
+                label: "Lunch",
+                startHour: 12,
+                startMinute: 30,
+                endHour: 13,
+                endMinute: 15
+            ),
+        ]
+    }
 
     func clearAllData() {
         events = []
         reflections = []
         plan = []
+        windows = Self.defaultWindows()
         goalActive = false
         goalStart = nil
         goalEnd = nil
@@ -726,10 +792,16 @@ final class PhoneFreeStore {
             reflections = saved
         }
 
-        if defaults.object(forKey: "phoneFreeLockScreenCounter") != nil {
-            lockScreenCounterEnabled = defaults.bool(
-                forKey: "phoneFreeLockScreenCounter"
-            )
+        if let data = defaults.data(forKey: "phoneFreeWindows"),
+           let saved = try? JSONDecoder().decode(
+               [PhoneFreeWindow].self,
+               from: data
+           ) {
+            windows = saved
+        } else {
+            // Nothing saved yet — start with the two windows most people mean
+            // when they say "I'd like to stop using my phone at night".
+            windows = Self.defaultWindows()
         }
 
         if let timestamp = defaults.object(
@@ -785,11 +857,15 @@ final class PhoneFreeStore {
             defaults.set(data, forKey: "phoneFreeReflections")
         }
 
+        if let data = try? JSONEncoder().encode(windows) {
+            defaults.set(data, forKey: "phoneFreeWindows")
+        }
+
+        if let data = try? JSONEncoder().encode(windows) {
+            defaults.set(data, forKey: "phoneFreeWindows")
+        }
+
         defaults.set(goalActive, forKey: "phoneFreeGoalActive")
-        defaults.set(
-            lockScreenCounterEnabled,
-            forKey: "phoneFreeLockScreenCounter"
-        )
 
         if let goalStart {
             defaults.set(goalStart, forKey: "phoneFreeGoalStart")

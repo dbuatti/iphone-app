@@ -115,7 +115,7 @@ struct PhoneFreeProgressView: View {
 
                 statCard(
                     value: "\(store.pickupsToday)",
-                    label: "PICKED UP TODAY",
+                    label: "TIMES YOU OPENED PHONEFREE",
                     symbol: "hand.raised"
                 )
             }
@@ -151,6 +151,34 @@ struct PhoneFreeProgressView: View {
                         Text(
                             "Measured between one pickup and the next, "
                             + "including the one running now."
+                        )
+                        .font(.system(size: 12))
+                        .foregroundStyle(PhoneFreeTheme.muted)
+                        .fixedSize(horizontal: false, vertical: true)
+                    }
+
+                    Spacer(minLength: 0)
+                }
+            }
+
+            PhoneFreeCard {
+                HStack(alignment: .top, spacing: 12) {
+                    Image(systemName: "info.circle")
+                        .font(.system(size: 15))
+                        .foregroundStyle(PhoneFreeTheme.muted)
+
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("“Times you opened PhoneFree”")
+                            .font(.system(size: 13, weight: .semibold))
+                            .foregroundStyle(.white)
+
+                        Text(
+                            "iOS does not let an app see your real unlocks, so "
+                            + "this counts the times you opened PhoneFree "
+                            + "itself. That is a stand-in, not the whole "
+                            + "picture: counting every pickup needs Apple's "
+                            + "Screen Time permission, which this app cannot "
+                            + "use yet."
                         )
                         .font(.system(size: 12))
                         .foregroundStyle(PhoneFreeTheme.muted)

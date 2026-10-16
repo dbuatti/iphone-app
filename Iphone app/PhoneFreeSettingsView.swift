@@ -13,6 +13,7 @@ struct PhoneFreeSettingsView: View {
 
     @State private var confirmingClearAll = false
     @State private var confirmingClearToday = false
+    @State private var showingWindows = false
 
     var body: some View {
         ScrollView(showsIndicators: false) {
@@ -20,6 +21,8 @@ struct PhoneFreeSettingsView: View {
                 header
 
                 lockScreenSection
+
+                windowsSection
 
                 sharingSection
 
@@ -64,6 +67,9 @@ struct PhoneFreeSettingsView: View {
                 + "kept."
             )
         }
+        .sheet(isPresented: $showingWindows) {
+            PhoneFreeWindowSettingsView()
+        }
     }
 
     // MARK: - Header
@@ -88,41 +94,54 @@ struct PhoneFreeSettingsView: View {
             PhoneFreeSectionLabel("LOCK SCREEN")
 
             PhoneFreeCard {
-                VStack(alignment: .leading, spacing: 12) {
-                    Toggle(
-                        isOn: Binding(
-                            get: { store.lockScreenCounterEnabled },
-                            set: { store.lockScreenCounterEnabled = $0 }
-                        )
-                    ) {
+                VStack(alignment: .leading, spacing: 14) {
+                    HStack(alignment: .top, spacing: 10) {
+                        Image(systemName: "hourglass")
+                            .font(.system(size: 16))
+                            .foregroundStyle(PhoneFreeTheme.accent)
+
                         VStack(alignment: .leading, spacing: 3) {
-                            Text("Show the counter on my Lock Screen")
+                            Text("The countdown shows during a goal")
                                 .font(.system(size: 15, weight: .medium))
                                 .foregroundStyle(.white)
 
                             Text(
-                                "Counts up from the last time you used your "
-                                + "phone, so it's waiting when you pick it up."
+                                "Start a goal and the time remaining appears on "
+                                + "your Lock Screen and Dynamic Island until it "
+                                + "runs out."
                             )
                             .font(.system(size: 12))
                             .foregroundStyle(PhoneFreeTheme.muted)
                             .fixedSize(horizontal: false, vertical: true)
                         }
                     }
-                    .tint(PhoneFreeTheme.accent)
 
-                    Text(
-                        "iOS only keeps a Live Activity for a few hours at a "
-                        + "time. It comes back next time you open the app."
-                    )
-                    .font(.system(size: 11))
-                    .foregroundStyle(PhoneFreeTheme.muted.opacity(0.85))
-                    .fixedSize(horizontal: false, vertical: true)
+                    Rectangle()
+                        .fill(PhoneFreeTheme.cardBorder)
+                        .frame(height: 1)
+
+                    HStack(alignment: .top, spacing: 10) {
+                        Image(systemName: "rectangle.3.group")
+                            .font(.system(size: 16))
+                            .foregroundStyle(PhoneFreeTheme.accent)
+
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text("The away counter is a widget")
+                                .font(.system(size: 15, weight: .medium))
+                                .foregroundStyle(.white)
+
+                            Text(
+                                "“Since you last used your phone” never expires, "
+                                + "so it lives on a Lock Screen widget rather than "
+                                + "a Live Activity. Long-press your Lock Screen, "
+                                + "tap Customize, and add The Pause."
+                            )
+                            .font(.system(size: 12))
+                            .foregroundStyle(PhoneFreeTheme.muted)
+                            .fixedSize(horizontal: false, vertical: true)
+                        }
+                    }
                 }
-            }
-            .onChange(of: store.lockScreenCounterEnabled) { _, _ in
-                store.save()
-                store.syncLockScreenCounter()
             }
         }
     }
@@ -174,6 +193,43 @@ struct PhoneFreeSettingsView: View {
             + PhoneFreeFormat.duration(store.protectedSecondsToday)
             + " and my longest pause was \(best). "
             + "Ask me how it's going."
+    }
+
+    // MARK: - Windows
+
+    private var windowsSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            PhoneFreeSectionLabel("PHONE-FREE WINDOWS")
+
+            Button {
+                showingWindows = true
+            } label: {
+                PhoneFreeCard {
+                    HStack(spacing: 10) {
+                        Image(systemName: "clock")
+                            .foregroundStyle(PhoneFreeTheme.muted)
+
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Scheduled windows & reminders")
+                                .font(.system(size: 15, weight: .medium))
+                                .foregroundStyle(.white)
+
+                            Text(
+                                "\(store.windows.filter { $0.enabled }.count) active"
+                            )
+                            .font(.system(size: 12))
+                            .foregroundStyle(PhoneFreeTheme.muted)
+                        }
+
+                        Spacer()
+
+                        Image(systemName: "chevron.right")
+                            .foregroundStyle(PhoneFreeTheme.muted)
+                    }
+                }
+            }
+            .buttonStyle(.plain)
+        }
     }
 
     // MARK: - Shields

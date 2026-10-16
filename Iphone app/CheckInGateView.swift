@@ -126,10 +126,10 @@ struct CheckInGateView: View {
         let times = checkInsToday == 1 ? "time" : "times"
 
         guard bestToday > 0 else {
-            return "You've picked your phone up \(checkInsToday) \(times) today."
+            return "You've opened PhoneFree \(checkInsToday) \(times) today."
         }
 
-        return "You've picked it up \(checkInsToday) \(times) today. "
+        return "You've opened PhoneFree \(checkInsToday) \(times) today. "
             + "Your best is \(formatDuration(bestToday))."
     }
 

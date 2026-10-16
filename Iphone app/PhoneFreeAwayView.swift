@@ -557,7 +557,7 @@ struct PhoneFreeAwayView: View {
         HStack(spacing: 12) {
             statCard(
                 value: "\(store.pickupsToday)",
-                label: "PICKED UP TODAY",
+                label: "TIMES YOU OPENED PHONEFREE",
                 symbol: "hand.raised"
             )
 
