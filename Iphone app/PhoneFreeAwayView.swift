@@ -86,24 +86,27 @@ struct PhoneFreeAwayView: View {
                 .multilineTextAlignment(.center)
 
             TimelineView(.periodic(from: .now, by: 1)) { context in
-                Text(PhoneFreeFormat.clock(store.awayInterval(at: context.date)))
-                    .font(
-                        .system(
-                            size: 64,
-                            weight: .light,
-                            design: .rounded
+                VStack(spacing: 16) {
+                    Text(PhoneFreeFormat.clock(store.awayInterval(at: context.date)))
+                        .font(
+                            .system(
+                                size: 64,
+                                weight: .light,
+                                design: .rounded
+                            )
                         )
-                    )
-                    .monospacedDigit()
-                    .minimumScaleFactor(0.5)
-                    .lineLimit(1)
-                    .foregroundStyle(.white)
-            }
+                        .monospacedDigit()
+                        .minimumScaleFactor(0.5)
+                        .lineLimit(1)
+                        .foregroundStyle(.white)
 
-            if store.bestGapToday > 0 {
-                Text("Your best today: \(PhoneFreeFormat.clock(store.bestGapToday))")
-                    .font(.system(size: 13, weight: .medium))
-                    .foregroundStyle(PhoneFreeTheme.accent)
+                    Rectangle()
+                        .fill(PhoneFreeTheme.cardBorder)
+                        .frame(height: 1)
+                        .padding(.horizontal, 4)
+
+                    gapTargetBlock(at: context.date, compact: false)
+                }
             }
         }
         .frame(maxWidth: .infinity)
@@ -188,6 +191,8 @@ struct PhoneFreeAwayView: View {
                     )
                     .font(.system(size: 13, weight: .medium))
                     .foregroundStyle(PhoneFreeTheme.accent)
+
+                    gapTargetBlock(at: context.date, compact: true)
                 }
             }
         }
@@ -206,6 +211,100 @@ struct PhoneFreeAwayView: View {
                 style: .continuous
             )
             .stroke(PhoneFreeTheme.cardBorder, lineWidth: 1)
+        }
+    }
+
+    // MARK: - Target block
+    //
+    // The away counter is more useful when it is climbing towards something.
+    // This names the next rung of the ladder in words, shows how close it is,
+    // and — when the run happening right now has beaten every finished one —
+    // says so. Never framed as something to lose.
+
+    @ViewBuilder
+    private func gapTargetBlock(at date: Date, compact: Bool) -> some View {
+        VStack(spacing: 9) {
+            if let target = store.nextGapTarget(at: date) {
+                HStack(alignment: .firstTextBaseline) {
+                    Text("NEXT TARGET")
+                        .font(.system(size: 10, weight: .bold))
+                        .tracking(1.4)
+                        .foregroundStyle(PhoneFreeTheme.muted)
+
+                    Spacer(minLength: 8)
+
+                    Text(PhoneFreeTargets.short(target))
+                        .font(
+                            .system(
+                                size: 15,
+                                weight: .semibold,
+                                design: .rounded
+                            )
+                        )
+                        .monospacedDigit()
+                        .foregroundStyle(.white)
+                }
+
+                if !compact {
+                    progressBar(store.gapTargetProgress(at: date))
+                }
+
+                VStack(spacing: 4) {
+                    if let remaining = store.gapTimeToTarget(at: date) {
+                        Text("\(PhoneFreeTargets.short(remaining)) to go")
+                            .font(.system(size: 12, weight: .medium))
+                            .foregroundStyle(PhoneFreeTheme.muted)
+                    }
+
+                    recordLine
+                }
+            } else {
+                Text(
+                    "You have climbed the whole ladder. Anything from here "
+                    + "is a bonus."
+                )
+                .font(.system(size: 12, weight: .medium))
+                .foregroundStyle(PhoneFreeTheme.accent)
+                .multilineTextAlignment(.center)
+                .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+    }
+
+    private func progressBar(_ progress: Double) -> some View {
+        GeometryReader { geometry in
+            ZStack(alignment: .leading) {
+                Capsule()
+                    .fill(Color.white.opacity(0.08))
+
+                Capsule()
+                    .fill(PhoneFreeTheme.accent)
+                    .frame(width: geometry.size.width * progress)
+            }
+        }
+        .frame(height: 6)
+        .accessibilityElement()
+        .accessibilityLabel("Progress towards your next target")
+        .accessibilityValue("\(Int(progress * 100)) percent")
+    }
+
+    @ViewBuilder
+    private var recordLine: some View {
+        if store.isNewLongestGap {
+            HStack(spacing: 5) {
+                Image(systemName: "star.fill")
+
+                Text("New record — your longest stretch yet.")
+            }
+            .font(.system(size: 12, weight: .semibold))
+            .foregroundStyle(PhoneFreeTheme.accent)
+        } else if store.bestCompletedGapEver > 0 {
+            Text(
+                "Your record "
+                + PhoneFreeFormat.clock(store.bestCompletedGapEver)
+            )
+            .font(.system(size: 12, weight: .medium))
+            .foregroundStyle(PhoneFreeTheme.muted)
         }
     }
 

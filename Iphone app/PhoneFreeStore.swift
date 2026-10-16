@@ -472,6 +472,52 @@ final class PhoneFreeStore {
         return max(best, awayInterval())
     }
 
+    /// The longest stretch away that is *finished*. Excludes the run happening
+    /// right now, so "is this a new record?" has an honest answer.
+    var bestCompletedGapEver: TimeInterval {
+        let all = events
+            .filter { $0.kind == PhoneFreeEventKind.pickup }
+            .map(\.timestamp)
+            .sorted()
+
+        var best: TimeInterval = 0
+
+        for (previous, next) in zip(all, all.dropFirst()) {
+            best = max(best, next.timeIntervalSince(previous))
+        }
+
+        return best
+    }
+
+    /// `true` when the stretch happening right now has already beaten every
+    /// finished one. Guarded on `> 0` so a fresh install does not instantly
+    /// declare a record on its first second of use.
+    var isNewLongestGap: Bool {
+        bestCompletedGapEver > 0 && awayInterval() > bestCompletedGapEver
+    }
+
+    // MARK: - Targets
+    //
+    // The ladder lives in `PhoneFreeTargets` so the app and the Lock Screen
+    // widget always name the same next step.
+
+    /// The next milestone the away counter is climbing towards.
+    func nextGapTarget(at date: Date = Date()) -> TimeInterval? {
+        PhoneFreeTargets.next(after: awayInterval(at: date))
+    }
+
+    /// How far the current gap has come towards its next milestone, `0...1`.
+    func gapTargetProgress(at date: Date = Date()) -> Double {
+        PhoneFreeTargets.progress(for: awayInterval(at: date))
+    }
+
+    /// How much longer until the next milestone. `nil` once the ladder's top
+    /// rung is behind you.
+    func gapTimeToTarget(at date: Date = Date()) -> TimeInterval? {
+        guard let target = nextGapTarget(at: date) else { return nil }
+        return max(0, target - awayInterval(at: date))
+    }
+
     /// A "run" of consecutive days with at least one completed goal. Framed as
     /// a run, never as something to lose.
     var goalRunDays: Int {

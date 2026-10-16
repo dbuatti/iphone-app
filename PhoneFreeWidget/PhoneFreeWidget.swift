@@ -10,6 +10,12 @@ struct PhoneFreeEntry: TimelineEntry {
     let goalsCompletedToday: Int
     let protectedMinutesToday: Int
     let lastCheckIn: Date?
+
+    /// The next rung of the away counter's ladder, and the longest *finished*
+    /// stretch ever. Named rather than implied — the whole app is about
+    /// stretching the gap, so the gap needs something to stretch towards.
+    let nextTargetSeconds: TimeInterval?
+    let bestGapSeconds: TimeInterval
 }
 
 struct PhoneFreeProvider: TimelineProvider {
@@ -20,7 +26,9 @@ struct PhoneFreeProvider: TimelineProvider {
             goalActive: true,
             goalsCompletedToday: 2,
             protectedMinutesToday: 35,
-            lastCheckIn: Date().addingTimeInterval(-3600)
+            lastCheckIn: Date().addingTimeInterval(-3600),
+            nextTargetSeconds: 2 * 3600,
+            bestGapSeconds: 6 * 3600
         )
     }
 
@@ -57,8 +65,13 @@ struct PhoneFreeProvider: TimelineProvider {
             forKey: "phoneFreeGoalEnd"
         ) as? Date
 
+        let lastCheckIn = defaults?.object(
+            forKey: "phoneFreeLastCheckIn"
+        ) as? Date
+
         var completedCount = 0
         var protectedSeconds: TimeInterval = 0
+        var bestGapSeconds: TimeInterval = 0
 
         if let data = defaults?.data(forKey: "phoneFreeHistory"),
            let events = try? JSONDecoder().decode(
@@ -82,7 +95,26 @@ struct PhoneFreeProvider: TimelineProvider {
                 .reduce(0) {
                     $0 + ($1.duration ?? 0)
                 }
+
+            // The longest *finished* stretch away, ever. The run happening
+            // right now is deliberately excluded, so the widget never calls
+            // the current gap its own record.
+            let pickups = events
+                .filter { $0.kind == "reach" }
+                .map(\.timestamp)
+                .sorted()
+
+            for (previous, next) in zip(pickups, pickups.dropFirst()) {
+                bestGapSeconds = max(
+                    bestGapSeconds,
+                    next.timeIntervalSince(previous)
+                )
+            }
         }
+
+        let gap = lastCheckIn.map {
+            max(0, Date().timeIntervalSince($0))
+        } ?? 0
 
         return PhoneFreeEntry(
             date: .now,
@@ -90,9 +122,9 @@ struct PhoneFreeProvider: TimelineProvider {
             goalActive: active,
             goalsCompletedToday: completedCount,
             protectedMinutesToday: Int(protectedSeconds / 60),
-            lastCheckIn: defaults?.object(
-                forKey: "phoneFreeLastCheckIn"
-            ) as? Date
+            lastCheckIn: lastCheckIn,
+            nextTargetSeconds: PhoneFreeTargets.next(after: gap),
+            bestGapSeconds: bestGapSeconds
         )
     }
 }
@@ -168,6 +200,25 @@ struct PhoneFreeWidgetEntryView: View {
             : "SINCE YOU LAST USED YOUR PHONE"
     }
 
+    /// "Next target 3h" — the rung the away counter is climbing towards.
+    private var targetLine: String? {
+        guard !accessoryIsGoal,
+              let target = entry.nextTargetSeconds else { return nil }
+        return "Next target \(PhoneFreeTargets.short(target))"
+    }
+
+    /// "Record 6h 03m" — the longest finished stretch, once there is one.
+    private var recordLine: String? {
+        guard entry.bestGapSeconds >= 60 else { return nil }
+        return "Record \(PhoneFreeTargets.short(entry.bestGapSeconds))"
+    }
+
+    /// "Next target 3h · Record 6h 03m", with either half optional.
+    private var targetSummary: String? {
+        let parts = [targetLine, recordLine].compactMap { $0 }
+        return parts.isEmpty ? nil : parts.joined(separator: "  ·  ")
+    }
+
     private var accessoryCircular: some View {
         ZStack {
             AccessoryWidgetBackground()
@@ -222,6 +273,14 @@ struct PhoneFreeWidgetEntryView: View {
                     .font(.system(size: 20, weight: .semibold))
                     .lineLimit(1)
                     .minimumScaleFactor(0.6)
+            }
+
+            if let targetLine {
+                Text(targetLine)
+                    .font(.system(size: 11, weight: .semibold))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.7)
+                    .padding(.top, 1)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -296,10 +355,14 @@ struct PhoneFreeWidgetEntryView: View {
                         .lineLimit(1)
                         .minimumScaleFactor(0.55)
 
-                    Text("Put it down and this keeps counting.")
-                        .font(.system(size: 10))
-                        .foregroundStyle(.white.opacity(0.65))
-                        .lineLimit(1)
+                    Text(
+                        targetSummary
+                        ?? "Put it down and this keeps counting."
+                    )
+                    .font(.system(size: 10, weight: .medium))
+                    .foregroundStyle(.white.opacity(0.7))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.75)
                 }
             } else {
                 VStack(alignment: .leading, spacing: 5) {
@@ -402,7 +465,9 @@ struct PhoneFreeWidget: Widget {
         goalActive: true,
         goalsCompletedToday: 2,
         protectedMinutesToday: 35,
-        lastCheckIn: Date().addingTimeInterval(-3600)
+        lastCheckIn: Date().addingTimeInterval(-3600),
+        nextTargetSeconds: 90 * 60,
+        bestGapSeconds: 6 * 3600
     )
 
     PhoneFreeEntry(
@@ -411,7 +476,9 @@ struct PhoneFreeWidget: Widget {
         goalActive: false,
         goalsCompletedToday: 1,
         protectedMinutesToday: 20,
-        lastCheckIn: Date().addingTimeInterval(-7200)
+        lastCheckIn: Date().addingTimeInterval(-7200),
+        nextTargetSeconds: 3 * 3600,
+        bestGapSeconds: 6 * 3600
     )
 }
 
@@ -424,7 +491,9 @@ struct PhoneFreeWidget: Widget {
         goalActive: false,
         goalsCompletedToday: 1,
         protectedMinutesToday: 20,
-        lastCheckIn: Date().addingTimeInterval(-7200)
+        lastCheckIn: Date().addingTimeInterval(-7200),
+        nextTargetSeconds: 3 * 3600,
+        bestGapSeconds: 6 * 3600
     )
 
     PhoneFreeEntry(
@@ -433,7 +502,9 @@ struct PhoneFreeWidget: Widget {
         goalActive: true,
         goalsCompletedToday: 2,
         protectedMinutesToday: 35,
-        lastCheckIn: Date().addingTimeInterval(-3600)
+        lastCheckIn: Date().addingTimeInterval(-3600),
+        nextTargetSeconds: 90 * 60,
+        bestGapSeconds: 6 * 3600
     )
 }
 
@@ -446,7 +517,9 @@ struct PhoneFreeWidget: Widget {
         goalActive: false,
         goalsCompletedToday: 1,
         protectedMinutesToday: 20,
-        lastCheckIn: Date().addingTimeInterval(-7200)
+        lastCheckIn: Date().addingTimeInterval(-7200),
+        nextTargetSeconds: 3 * 3600,
+        bestGapSeconds: 6 * 3600
     )
 }
 
@@ -459,6 +532,8 @@ struct PhoneFreeWidget: Widget {
         goalActive: false,
         goalsCompletedToday: 1,
         protectedMinutesToday: 20,
-        lastCheckIn: Date().addingTimeInterval(-7200)
+        lastCheckIn: Date().addingTimeInterval(-7200),
+        nextTargetSeconds: 3 * 3600,
+        bestGapSeconds: 6 * 3600
     )
 }
