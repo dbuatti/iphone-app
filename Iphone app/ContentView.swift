@@ -79,8 +79,10 @@ struct ContentView: View {
             NotificationCenter.default.publisher(
                 for: .phoneFreeStartFromReminder
             )
-        ) { _ in
-            store.startGoalFromReminder()
+        ) { notification in
+            store.startGoalFromReminder(
+                windowID: notification.userInfo?["windowID"] as? String
+            )
             tab = .away
         }
         .onReceive(
