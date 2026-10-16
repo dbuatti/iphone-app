@@ -52,9 +52,30 @@ struct PhoneFreeWidgetLiveActivity: Widget {
                         .minimumScaleFactor(0.7)
                         .lineLimit(1)
 
-                    Text("\(context.state.goalMinutes)-minute commitment")
-                        .font(.system(size: 12))
-                        .foregroundStyle(.white.opacity(0.7))
+                    if let segment = context.state.currentSegment(at: Date()) {
+                        HStack(spacing: 5) {
+                            Image(systemName: segment.symbol)
+
+                            Text(
+                                "\(segment.name) · "
+                                + "\(minutesRemaining(until: segment.end)) min"
+                            )
+                        }
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(.mint)
+                        .lineLimit(1)
+                    }
+
+                    Text(
+                        coachMessage(
+                            start: context.state.startDate,
+                            end: context.state.endDate
+                        )
+                    )
+                    .font(.system(size: 12))
+                    .foregroundStyle(.white.opacity(0.7))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
                 }
 
                 Spacer(minLength: 0)
@@ -87,9 +108,25 @@ struct PhoneFreeWidgetLiveActivity: Widget {
                                 .tracking(2)
                                 .foregroundStyle(.mint)
 
-                            Text("Stay with the moment.")
-                                .font(.system(size: 14))
+                            if let segment = context.state.currentSegment(at: Date()) {
+                                HStack(spacing: 5) {
+                                    Image(systemName: segment.symbol)
+
+                                    Text(segment.name)
+                                }
+                                .font(.system(size: 14, weight: .medium))
                                 .foregroundStyle(.white)
+                            }
+
+                            Text(
+                                coachMessage(
+                                    start: context.state.startDate,
+                                    end: context.state.endDate
+                                )
+                            )
+                            .font(.system(size: 12))
+                            .foregroundStyle(.white.opacity(0.7))
+                            .lineLimit(2)
                         }
 
                         Spacer()
@@ -127,6 +164,40 @@ struct PhoneFreeWidgetLiveActivity: Widget {
 
         return CGFloat(min(max(elapsed / total, 0), 1))
     }
+
+    private func minutesRemaining(until date: Date) -> Int {
+        max(1, Int(ceil(date.timeIntervalSince(Date()) / 60)))
+    }
+
+    /// Coaching copy that is recalculated every time the Lock Screen or Dynamic
+    /// Island renders the activity — which, in practice, is every time the user
+    /// picks the phone up. That is exactly when we want to talk to them.
+    private func coachMessage(start: Date, end: Date) -> String {
+        let total = end.timeIntervalSince(start)
+
+        guard total > 0 else { return "Stay with the moment." }
+
+        let remaining = end.timeIntervalSince(Date())
+
+        if remaining <= 0 { return "You did it. Well done." }
+
+        let elapsed = total - remaining
+        let fraction = min(max(elapsed / total, 0), 1)
+        let minutesLeft = max(1, Int(ceil(remaining / 60)))
+
+        switch fraction {
+        case ..<0.1:
+            return "You just put it down. Nice."
+        case ..<0.35:
+            return "The urge passes in about 90 seconds."
+        case ..<0.6:
+            return "This is the hard part. Stay with it."
+        case ..<0.85:
+            return "More than halfway — \(minutesLeft) min to go."
+        default:
+            return "Nearly there — \(minutesLeft) min left."
+        }
+    }
 }
 
 #Preview("PhoneFree Live Activity", as: .content, using: PhoneFreeWidgetAttributes(name: "PhoneFree")) {
@@ -135,6 +206,20 @@ struct PhoneFreeWidgetLiveActivity: Widget {
     PhoneFreeWidgetAttributes.ContentState(
         startDate: .now,
         endDate: .now.addingTimeInterval(20 * 60),
-        goalMinutes: 20
+        goalMinutes: 20,
+        segments: [
+            PhoneFreeActivitySegment(
+                name: "Read",
+                symbol: "book.fill",
+                start: .now,
+                end: .now.addingTimeInterval(10 * 60)
+            ),
+            PhoneFreeActivitySegment(
+                name: "Yoga",
+                symbol: "figure.yoga",
+                start: .now.addingTimeInterval(10 * 60),
+                end: .now.addingTimeInterval(20 * 60)
+            )
+        ]
     )
 }

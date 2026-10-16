@@ -14,12 +14,21 @@ private struct PhoneFreeEvent: Codable, Identifiable {
 }
 
 struct ContentView: View {
+    @Environment(\.scenePhase) private var scenePhase
+
     @State private var events: [PhoneFreeEvent] = []
     @State private var selectedMinutes = 20
     @State private var goalStart: Date?
     @State private var goalEnd: Date?
     @State private var goalActive = false
-    @State private var showingEndConfirmation = false
+    @State private var showingPromiseGate = false
+    @State private var gateShownThisSession = false
+
+    @State private var plan: [PlannedActivity] = []
+    @State private var reflections: [PhoneFreeReflection] = []
+    @State private var showingPlanBuilder = false
+    @State private var showingReflectionSheet = false
+    @State private var pendingReflection: [PlannedActivity] = []
 
     private let goalOptions = [5, 10, 20, 30, 45]
 
@@ -52,12 +61,20 @@ struct ContentView: View {
                     timerSection
 
                     if goalActive {
+                        if !plan.isEmpty {
+                            currentActivitySection
+                        }
+
                         activeGoalSection
                     } else {
                         goalPickerSection
                     }
 
                     dailyProgressSection
+
+                    if !reflections.isEmpty {
+                        insightSection
+                    }
 
                     activitySection
 
@@ -67,11 +84,43 @@ struct ContentView: View {
                 .padding(.top, 18)
                 .padding(.bottom, 36)
             }
+
+            if showingPromiseGate, let goalEnd {
+                PromiseGateView(
+                    goalEnd: goalEnd,
+                    goalMinutes: effectiveGoalMinutes,
+                    reachedToday: reachesToday,
+                    onKeepGoing: { showingPromiseGate = false },
+                    onBreakPromise: {
+                        showingPromiseGate = false
+                        endGoal()
+                    }
+                )
+                .transition(.opacity)
+                .zIndex(1)
+            }
         }
         .preferredColorScheme(.dark)
+        .sheet(isPresented: $showingPlanBuilder) {
+            ActivityPlanBuilder(plan: $plan)
+        }
+        .sheet(isPresented: $showingReflectionSheet) {
+            ReflectionSheet(
+                plan: pendingReflection,
+                onSave: { newReflections in
+                    reflections.append(contentsOf: newReflections)
+                    saveData()
+                    showingReflectionSheet = false
+                },
+                onSkip: {
+                    showingReflectionSheet = false
+                }
+            )
+        }
         .onAppear {
             loadSavedData()
             finishExpiredGoalIfNeeded()
+            handleBecameActive()
         }
         .onReceive(
             Timer.publish(
@@ -82,18 +131,15 @@ struct ContentView: View {
         ) { _ in
             finishExpiredGoalIfNeeded()
         }
-        .confirmationDialog(
-            "End your phone-free goal?",
-            isPresented: $showingEndConfirmation,
-            titleVisibility: .visible
-        ) {
-            Button("End goal early", role: .destructive) {
-                endGoal()
+        .onChange(of: scenePhase) { _, phase in
+            switch phase {
+            case .active:
+                handleBecameActive()
+            case .background:
+                gateShownThisSession = false
+            default:
+                break
             }
-
-            Button("Keep going", role: .cancel) {}
-        } message: {
-            Text("Your progress will still be recorded.")
         }
         .onOpenURL { url in
             guard url.scheme == "phonefree" else { return }
@@ -101,7 +147,9 @@ struct ContentView: View {
             if url.host == "goal" {
                 // Open the app so you can deliberately begin a goal.
             } else if url.host == "end" {
-                showingEndConfirmation = true
+                if goalActive {
+                    showingPromiseGate = true
+                }
             }
         }
     }
@@ -147,7 +195,7 @@ struct ContentView: View {
                 let end = goalEnd ?? now
 
                 let totalDuration = max(
-                    Double(selectedMinutes * 60),
+                    Double(effectiveGoalMinutes * 60),
                     1
                 )
 
@@ -215,7 +263,7 @@ struct ContentView: View {
                                 .lineLimit(1)
                                 .foregroundStyle(.white)
                         } else {
-                            Text("\(selectedMinutes):00")
+                            Text("\(effectiveGoalMinutes):00")
                                 .font(
                                     .system(
                                         size: 38,
@@ -249,7 +297,7 @@ struct ContentView: View {
                 .accessibilityLabel(
                     goalActive
                         ? "\(Int(elapsed / 60)) minutes phone-free, \(Int(remaining / 60)) minutes remaining"
-                        : "\(selectedMinutes) minute phone-free goal"
+                        : "\(effectiveGoalMinutes) minute phone-free goal"
                 )
             }
             .frame(maxWidth: .infinity)
@@ -286,46 +334,63 @@ struct ContentView: View {
 
     private var goalPickerSection: some View {
         VStack(spacing: 16) {
-            Text("HOW LONG WOULD YOU LIKE?")
-                .font(.system(size: 11, weight: .bold))
-                .tracking(1.8)
-                .foregroundStyle(muted)
+            if plan.isEmpty {
+                Text("HOW LONG WOULD YOU LIKE?")
+                    .font(.system(size: 11, weight: .bold))
+                    .tracking(1.8)
+                    .foregroundStyle(muted)
 
-            HStack(spacing: 9) {
-                ForEach(goalOptions, id: \.self) { minutes in
+                minuteChips
+
+                Button {
+                    showingPlanBuilder = true
+                } label: {
+                    HStack(spacing: 8) {
+                        Image(systemName: "list.bullet.rectangle")
+
+                        Text("Fill the time with something")
+                            .font(.system(size: 13, weight: .medium))
+                    }
+                    .foregroundStyle(accent)
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 46)
+                    .background(.white.opacity(0.05))
+                    .clipShape(RoundedRectangle(cornerRadius: 14))
+                }
+                .buttonStyle(.plain)
+
+                suggestionsRow
+            } else {
+                Text("YOUR PLAN")
+                    .font(.system(size: 11, weight: .bold))
+                    .tracking(1.8)
+                    .foregroundStyle(muted)
+
+                planSummary
+
+                HStack(spacing: 10) {
                     Button {
-                        selectedMinutes = minutes
+                        showingPlanBuilder = true
                     } label: {
-                        VStack(spacing: 5) {
-                            Text("\(minutes)")
-                                .font(.system(size: 18, weight: .semibold))
+                        Text("Edit plan")
+                            .font(.system(size: 13, weight: .medium))
+                            .foregroundStyle(accent)
+                            .frame(maxWidth: .infinity)
+                            .frame(height: 44)
+                            .background(.white.opacity(0.05))
+                            .clipShape(RoundedRectangle(cornerRadius: 13))
+                    }
+                    .buttonStyle(.plain)
 
-                            Text("MIN")
-                                .font(.system(size: 9, weight: .bold))
-                                .tracking(1)
-                        }
-                        .foregroundStyle(
-                            selectedMinutes == minutes
-                                ? background
-                                : .white
-                        )
-                        .frame(maxWidth: .infinity)
-                        .frame(height: 64)
-                        .background(
-                            selectedMinutes == minutes
-                                ? accent
-                                : .white.opacity(0.055)
-                        )
-                        .clipShape(RoundedRectangle(cornerRadius: 15))
-                        .overlay {
-                            RoundedRectangle(cornerRadius: 15)
-                                .stroke(
-                                    selectedMinutes == minutes
-                                        ? accent
-                                        : .white.opacity(0.08),
-                                    lineWidth: 1
-                                )
-                        }
+                    Button {
+                        plan = []
+                    } label: {
+                        Text("Clear")
+                            .font(.system(size: 13, weight: .medium))
+                            .foregroundStyle(muted)
+                            .frame(width: 84, height: 44)
+                            .background(.white.opacity(0.05))
+                            .clipShape(RoundedRectangle(cornerRadius: 13))
                     }
                     .buttonStyle(.plain)
                 }
@@ -337,8 +402,12 @@ struct ContentView: View {
                 HStack(spacing: 10) {
                     Image(systemName: "iphone.slash")
 
-                    Text("Put my phone down")
-                        .font(.system(size: 16, weight: .semibold))
+                    Text(
+                        plan.isEmpty
+                            ? "Put my phone down"
+                            : "Start \(planTotalMinutes) min plan"
+                    )
+                    .font(.system(size: 16, weight: .semibold))
 
                     Spacer()
 
@@ -359,6 +428,157 @@ struct ContentView: View {
         }
     }
 
+    private var minuteChips: some View {
+        HStack(spacing: 9) {
+            ForEach(goalOptions, id: \.self) { minutes in
+                Button {
+                    selectedMinutes = minutes
+                } label: {
+                    VStack(spacing: 5) {
+                        Text("\(minutes)")
+                            .font(.system(size: 18, weight: .semibold))
+
+                        Text("MIN")
+                            .font(.system(size: 9, weight: .bold))
+                            .tracking(1)
+                    }
+                    .foregroundStyle(
+                        selectedMinutes == minutes
+                            ? background
+                            : .white
+                    )
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 64)
+                    .background(
+                        selectedMinutes == minutes
+                            ? accent
+                            : .white.opacity(0.055)
+                    )
+                    .clipShape(RoundedRectangle(cornerRadius: 15))
+                    .overlay {
+                        RoundedRectangle(cornerRadius: 15)
+                            .stroke(
+                                selectedMinutes == minutes
+                                    ? accent
+                                    : .white.opacity(0.08),
+                                lineWidth: 1
+                            )
+                    }
+                }
+                .buttonStyle(.plain)
+            }
+        }
+    }
+
+    private var planSummary: some View {
+        VStack(spacing: 8) {
+            ForEach(plan) { planned in
+                if let activity = planned.activity {
+                    HStack(spacing: 12) {
+                        Image(systemName: activity.symbol)
+                            .font(.system(size: 14))
+                            .foregroundStyle(accent)
+                            .frame(width: 22)
+
+                        Text(activity.name)
+                            .font(.system(size: 14, weight: .medium))
+                            .foregroundStyle(.white)
+
+                        Spacer()
+
+                        Text("\(planned.minutes) min")
+                            .font(.system(size: 13, weight: .semibold))
+                            .foregroundStyle(accent)
+                    }
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 12)
+                    .background(.white.opacity(0.05))
+                    .clipShape(RoundedRectangle(cornerRadius: 13))
+                }
+            }
+        }
+    }
+
+    private var suggestionsRow: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text(
+                reflections.isEmpty
+                    ? "NEED AN IDEA?"
+                    : "SUGGESTED FOR YOU"
+            )
+            .font(.system(size: 10, weight: .bold))
+            .tracking(1.4)
+            .foregroundStyle(muted)
+
+            HStack(spacing: 8) {
+                ForEach(suggestedActivities) { activity in
+                    Button {
+                        plan.append(
+                            PlannedActivity(
+                                activityID: activity.id,
+                                minutes: activity.defaultMinutes
+                            )
+                        )
+                    } label: {
+                        VStack(spacing: 7) {
+                            Image(systemName: activity.symbol)
+                                .font(.system(size: 16))
+
+                            Text(activity.name)
+                                .font(.system(size: 11, weight: .medium))
+                                .lineLimit(1)
+                                .minimumScaleFactor(0.8)
+                        }
+                        .foregroundStyle(accent)
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 66)
+                        .background(.white.opacity(0.045))
+                        .clipShape(RoundedRectangle(cornerRadius: 14))
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+        }
+    }
+
+    // MARK: - Current activity
+
+    private var currentActivitySection: some View {
+        TimelineView(.periodic(from: .now, by: 1)) { context in
+            if let current = currentActivity(at: context.date) {
+                HStack(spacing: 14) {
+                    Image(systemName: current.activity.symbol)
+                        .font(.system(size: 18))
+                        .foregroundStyle(accent)
+                        .frame(width: 26)
+
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text("RIGHT NOW")
+                            .font(.system(size: 9, weight: .bold))
+                            .tracking(1.4)
+                            .foregroundStyle(muted)
+
+                        Text(current.activity.name)
+                            .font(.system(size: 17, weight: .semibold))
+                            .foregroundStyle(.white)
+                    }
+
+                    Spacer()
+
+                    Text(
+                        formatTime(current.end.timeIntervalSince(context.date))
+                    )
+                    .font(.system(size: 17, weight: .medium, design: .rounded))
+                    .monospacedDigit()
+                    .foregroundStyle(accent)
+                }
+                .padding(16)
+                .background(.white.opacity(0.045))
+                .clipShape(RoundedRectangle(cornerRadius: 16))
+            }
+        }
+    }
+
     // MARK: - Active goal
 
     private var activeGoalSection: some View {
@@ -368,7 +588,7 @@ struct ContentView: View {
                     .foregroundStyle(accent)
 
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("\(selectedMinutes)-minute commitment")
+                    Text("\(effectiveGoalMinutes)-minute commitment")
                         .font(.system(size: 15, weight: .medium))
                         .foregroundStyle(.white)
 
@@ -389,7 +609,7 @@ struct ContentView: View {
             .clipShape(RoundedRectangle(cornerRadius: 16))
 
             Button {
-                showingEndConfirmation = true
+                showingPromiseGate = true
             } label: {
                 Text("End goal early")
                     .font(.system(size: 14, weight: .medium))
@@ -408,19 +628,48 @@ struct ContentView: View {
     // MARK: - Daily progress
 
     private var dailyProgressSection: some View {
-        HStack(spacing: 12) {
-            statCard(
-                value: "\(completedGoalsToday)",
-                label: "GOALS COMPLETED",
-                symbol: "checkmark.circle"
-            )
+        VStack(spacing: 12) {
+            HStack(spacing: 12) {
+                statCard(
+                    value: "\(completedGoalsToday)",
+                    label: "GOALS COMPLETED",
+                    symbol: "checkmark.circle"
+                )
 
-            statCard(
-                value: formattedProtectedTime,
-                label: "TIME PROTECTED",
-                symbol: "clock"
-            )
+                statCard(
+                    value: formattedProtectedTime,
+                    label: "TIME PROTECTED",
+                    symbol: "clock"
+                )
+            }
+
+            reachesCard
         }
+    }
+
+    private var reachesCard: some View {
+        HStack(spacing: 14) {
+            Image(systemName: "hand.raised")
+                .font(.system(size: 18))
+                .foregroundStyle(accent)
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text(reachesToday == 1 ? "1 time" : "\(reachesToday) times")
+                    .font(.system(size: 24, weight: .medium, design: .rounded))
+                    .foregroundStyle(.white)
+
+                Text("REACHED FOR YOUR PHONE TODAY")
+                    .font(.system(size: 9, weight: .bold))
+                    .tracking(1)
+                    .foregroundStyle(muted)
+            }
+
+            Spacer()
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(17)
+        .background(.white.opacity(0.045))
+        .clipShape(RoundedRectangle(cornerRadius: 17))
     }
 
     private func statCard(
@@ -470,6 +719,7 @@ struct ContentView: View {
 
             let todayEvents = events
                 .filter {
+                    $0.kind != "reach" &&
                     Calendar.current.isDateInToday($0.timestamp)
                 }
                 .sorted {
@@ -550,9 +800,10 @@ struct ContentView: View {
     private func startGoal() {
         guard !goalActive else { return }
 
+        let minutes = effectiveGoalMinutes
         let now = Date()
         let end = now.addingTimeInterval(
-            TimeInterval(selectedMinutes * 60)
+            TimeInterval(minutes * 60)
         )
 
         goalStart = now
@@ -563,7 +814,9 @@ struct ContentView: View {
             PhoneFreeEvent(
                 timestamp: now,
                 kind: "goal_started",
-                note: "\(selectedMinutes)-minute goal",
+                note: plan.isEmpty
+                    ? "\(minutes)-minute goal"
+                    : "\(minutes)-minute plan (\(plan.count) activities)",
                 duration: nil
             )
         )
@@ -571,9 +824,10 @@ struct ContentView: View {
         saveData()
 
         PhoneFreeLiveActivityManager.shared.start(
-            minutes: selectedMinutes,
+            minutes: minutes,
             start: now,
-            end: end
+            end: end,
+            segments: buildSegments(from: now)
         )
     }
 
@@ -602,6 +856,8 @@ struct ContentView: View {
         saveData()
 
         PhoneFreeLiveActivityManager.shared.end()
+
+        requestReflection()
     }
 
     private func finishExpiredGoalIfNeeded() {
@@ -614,14 +870,14 @@ struct ContentView: View {
         }
 
         let start = goalStart ?? end.addingTimeInterval(
-            -TimeInterval(selectedMinutes * 60)
+            -TimeInterval(effectiveGoalMinutes * 60)
         )
 
         events.append(
             PhoneFreeEvent(
                 timestamp: end,
                 kind: "goal_completed",
-                note: "\(selectedMinutes)-minute goal",
+                note: "\(effectiveGoalMinutes)-minute goal",
                 duration: end.timeIntervalSince(start)
             )
         )
@@ -633,6 +889,17 @@ struct ContentView: View {
         saveData()
 
         PhoneFreeLiveActivityManager.shared.end()
+
+        requestReflection()
+    }
+
+    /// After a plan finishes, ask how it went. Skipped when there was no plan —
+    /// there is nothing specific to reflect on.
+    private func requestReflection() {
+        guard !plan.isEmpty else { return }
+
+        pendingReflection = plan
+        showingReflectionSheet = true
     }
 
     // MARK: - Persistence
@@ -648,6 +915,22 @@ struct ContentView: View {
                 from: data
            ) {
             events = savedEvents
+        }
+
+        if let data = defaults.data(forKey: "phoneFreePlan"),
+           let savedPlan = try? JSONDecoder().decode(
+                [PlannedActivity].self,
+                from: data
+           ) {
+            plan = savedPlan
+        }
+
+        if let data = defaults.data(forKey: "phoneFreeReflections"),
+           let savedReflections = try? JSONDecoder().decode(
+                [PhoneFreeReflection].self,
+                from: data
+           ) {
+            reflections = savedReflections
         }
 
         goalActive = defaults.bool(forKey: "phoneFreeGoalActive")
@@ -676,9 +959,10 @@ struct ContentView: View {
             goalEnd = nil
         } else if let start = goalStart, let end = goalEnd, end > .now {
             PhoneFreeLiveActivityManager.shared.restoreIfNeeded(
-                minutes: selectedMinutes,
+                minutes: effectiveGoalMinutes,
                 start: start,
-                end: end
+                end: end,
+                segments: buildSegments(from: start)
             )
         }
     }
@@ -690,6 +974,14 @@ struct ContentView: View {
 
         if let data = try? JSONEncoder().encode(events) {
             defaults.set(data, forKey: "phoneFreeHistory")
+        }
+
+        if let data = try? JSONEncoder().encode(plan) {
+            defaults.set(data, forKey: "phoneFreePlan")
+        }
+
+        if let data = try? JSONEncoder().encode(reflections) {
+            defaults.set(data, forKey: "phoneFreeReflections")
         }
 
         defaults.set(goalActive, forKey: "phoneFreeGoalActive")
@@ -707,6 +999,127 @@ struct ContentView: View {
         }
 
         WidgetCenter.shared.reloadAllTimelines()
+    }
+
+    // MARK: - Plan helpers
+
+    /// The length of the goal: the plan's total when there is a plan, otherwise
+    /// whatever the minute chips say.
+    private var effectiveGoalMinutes: Int {
+        plan.isEmpty ? selectedMinutes : max(planTotalMinutes, 1)
+    }
+
+    private var planTotalMinutes: Int {
+        plan.reduce(0) { $0 + $1.minutes }
+    }
+
+    private var suggestedActivities: [PhoneFreeActivity] {
+        PhoneFreeAdvisor.suggestions(from: reflections)
+    }
+
+    /// Turns the plan into the timed segments the Live Activity renders. Each
+    /// one starts where the previous ended.
+    private func buildSegments(from start: Date) -> [PhoneFreeActivitySegment] {
+        var cursor = start
+
+        return plan.compactMap { planned in
+            guard let activity = planned.activity else { return nil }
+
+            let segmentEnd = cursor.addingTimeInterval(
+                TimeInterval(planned.minutes * 60)
+            )
+
+            let segment = PhoneFreeActivitySegment(
+                name: activity.name,
+                symbol: activity.symbol,
+                start: cursor,
+                end: segmentEnd
+            )
+
+            cursor = segmentEnd
+
+            return segment
+        }
+    }
+
+    /// Which planned activity should be showing now, and when it ends.
+    private func currentActivity(
+        at date: Date
+    ) -> (activity: PhoneFreeActivity, end: Date)? {
+        guard let start = goalStart else { return nil }
+
+        var cursor = start
+
+        for planned in plan {
+            guard let activity = planned.activity else { continue }
+
+            let end = cursor.addingTimeInterval(
+                TimeInterval(planned.minutes * 60)
+            )
+
+            if date < end {
+                return (activity, end)
+            }
+
+            cursor = end
+        }
+
+        return nil
+    }
+
+    private var insightSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("WHAT WORKS FOR YOU")
+                .font(.system(size: 11, weight: .bold))
+                .tracking(1.8)
+                .foregroundStyle(muted)
+
+            VStack(spacing: 10) {
+                if let best = PhoneFreeAdvisor.mostEnjoyed(from: reflections) {
+                    insightRow(
+                        symbol: best.symbol,
+                        title: "You enjoy \(best.name.lowercased())",
+                        detail: "We'll suggest it again."
+                    )
+                }
+
+                if let hard = PhoneFreeAdvisor.hardest(from: reflections) {
+                    insightRow(
+                        symbol: "flame",
+                        title: "\(hard.name) felt hard",
+                        detail: "Try it shorter, or try something gentler."
+                    )
+                }
+            }
+        }
+    }
+
+    private func insightRow(
+        symbol: String,
+        title: String,
+        detail: String
+    ) -> some View {
+        HStack(spacing: 14) {
+            Image(systemName: symbol)
+                .font(.system(size: 16))
+                .foregroundStyle(accent)
+                .frame(width: 26)
+
+            VStack(alignment: .leading, spacing: 3) {
+                Text(title)
+                    .font(.system(size: 14, weight: .medium))
+                    .foregroundStyle(.white)
+
+                Text(detail)
+                    .font(.system(size: 12))
+                    .foregroundStyle(muted)
+            }
+
+            Spacer()
+        }
+        .padding(15)
+        .background(.white.opacity(0.045))
+        .clipShape(RoundedRectangle(cornerRadius: 15))
     }
 
     // MARK: - Display helpers
@@ -769,9 +1182,56 @@ struct ContentView: View {
             return "Goal ended early"
         case "goal_started":
             return "Phone-free goal started"
+        case "reach":
+            return "Reached for your phone"
         default:
             return event.note ?? "Phone-free moment"
         }
+    }
+
+    // MARK: - Reaching for the phone
+
+    /// Called whenever the app becomes active. Every activation is a proxy for
+    /// "the user reached for their phone", and if a goal is running we put the
+    /// promise gate in front of them.
+    private func handleBecameActive() {
+        logReach()
+
+        guard goalActive, let goalEnd, goalEnd > .now else { return }
+
+        if !gateShownThisSession {
+            gateShownThisSession = true
+            showingPromiseGate = true
+        }
+    }
+
+    private func logReach() {
+        let now = Date()
+
+        // `onAppear` and the scenePhase change can both fire on a warm return;
+        // collapse them into a single "reach".
+        if let last = events.last(where: { $0.kind == "reach" }),
+           now.timeIntervalSince(last.timestamp) < 5 {
+            return
+        }
+
+        events.append(
+            PhoneFreeEvent(
+                timestamp: now,
+                kind: "reach",
+                note: nil,
+                duration: nil
+            )
+        )
+
+        saveData()
+    }
+
+    private var reachesToday: Int {
+        events.filter {
+            $0.kind == "reach" &&
+            Calendar.current.isDateInToday($0.timestamp)
+        }.count
     }
 }
 

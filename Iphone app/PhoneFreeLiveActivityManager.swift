@@ -23,13 +23,19 @@ final class PhoneFreeLiveActivityManager {
 
     /// Starts a fresh countdown. Any activity already showing is ended first,
     /// so there is never more than one phone-free activity at a time.
-    func start(minutes: Int, start: Date, end: Date) {
+    func start(
+        minutes: Int,
+        start: Date,
+        end: Date,
+        segments: [PhoneFreeActivitySegment] = []
+    ) {
         guard isSupported else { return }
 
         let state = PhoneFreeWidgetAttributes.ContentState(
             startDate: start,
             endDate: end,
-            goalMinutes: minutes
+            goalMinutes: minutes,
+            segments: segments
         )
 
         Task {
@@ -54,13 +60,23 @@ final class PhoneFreeLiveActivityManager {
 
     /// Re-attaches to a running goal after the app relaunches. If an activity
     /// is already on screen it is left untouched, to avoid a visible restart.
-    func restoreIfNeeded(minutes: Int, start: Date, end: Date) {
+    func restoreIfNeeded(
+        minutes: Int,
+        start: Date,
+        end: Date,
+        segments: [PhoneFreeActivitySegment] = []
+    ) {
         guard isSupported else { return }
         guard Activity<PhoneFreeWidgetAttributes>.activities.isEmpty else {
             return
         }
 
-        self.start(minutes: minutes, start: start, end: end)
+        self.start(
+            minutes: minutes,
+            start: start,
+            end: end,
+            segments: segments
+        )
     }
 
     /// Ends the countdown (goal completed or ended early).
