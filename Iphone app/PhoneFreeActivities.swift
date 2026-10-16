@@ -152,6 +152,10 @@ struct PhoneFreeReflection: Codable, Identifiable, Hashable {
     var activityID: String
     var timestamp: Date
 
+    /// How long the user gave this activity. Optional so reflections saved
+    /// before this field existed still decode.
+    var minutes: Int?
+
     /// 1 (not at all) ... 5 (a lot)
     var enjoyment: Int
 

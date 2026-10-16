@@ -32,6 +32,11 @@ nonisolated struct PhoneFreeWidgetAttributes: ActivityAttributes {
         var goalMinutes: Int
         var segments: [PhoneFreeActivitySegment] = []
 
+        /// `true` for the always-on counter that shows how long the user has
+        /// been away since their last check-in. It counts *up* from
+        /// `startDate` rather than down to `endDate`.
+        var countsUp: Bool = false
+
         /// Which planned activity should be on screen right now.
         ///
         /// Segments are in order, so the first one that has not yet finished is

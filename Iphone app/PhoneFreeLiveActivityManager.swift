@@ -58,6 +58,61 @@ final class PhoneFreeLiveActivityManager {
         }
     }
 
+    /// Starts (or refreshes) the always-on counter that shows how long it has
+    /// been since the phone was last used.
+    ///
+    /// Unlike a goal, this counts *up* from a date in the past, so the Lock
+    /// Screen keeps ticking on its own with no help from the app. It is
+    /// restarted — never duplicated — each time the streak resets.
+    ///
+    /// Note: a Live Activity cannot run forever. iOS retires it after a number
+    /// of hours; it reappears the next time the app is opened.
+    func startCheckIn(since date: Date) {
+        guard isSupported else { return }
+
+        let state = PhoneFreeWidgetAttributes.ContentState(
+            startDate: date,
+            endDate: date,
+            goalMinutes: 0,
+            segments: [],
+            countsUp: true
+        )
+
+        Task {
+            if let existing = Activity<PhoneFreeWidgetAttributes>.activities
+                .first(where: { $0.content.state.countsUp }) {
+                await existing.update(
+                    ActivityContent(state: state, staleDate: nil)
+                )
+                return
+            }
+
+            await endAll()
+
+            do {
+                _ = try Activity.request(
+                    attributes: PhoneFreeWidgetAttributes(
+                        name: "PhoneFree"
+                    ),
+                    content: ActivityContent(state: state, staleDate: nil),
+                    pushType: nil
+                )
+            } catch {
+                // Best effort.
+            }
+        }
+    }
+
+    /// Removes the counter (used when the user switches it off).
+    func endCheckIn() {
+        Task {
+            for activity in Activity<PhoneFreeWidgetAttributes>.activities
+            where activity.content.state.countsUp {
+                await activity.end(nil, dismissalPolicy: .immediate)
+            }
+        }
+    }
+
     /// Re-attaches to a running goal after the app relaunches. If an activity
     /// is already on screen it is left untouched, to avoid a visible restart.
     func restoreIfNeeded(

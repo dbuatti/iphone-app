@@ -1,0 +1,394 @@
+//
+//  PhoneFreeProgressView.swift
+//  Iphone app
+//
+//  Everything the app has noticed, kept out of the way of the home screen.
+//
+//  A note on streaks: streak mechanics can turn into a compulsion, which is
+//  the last thing this app should create for the people it is for. So the run
+//  is shown as a fact ("4-day run"), never as a warning, and breaking it costs
+//  nothing and is never mentioned again.
+//
+
+import Charts
+import SwiftUI
+
+struct PhoneFreeProgressView: View {
+    @Environment(PhoneFreeStore.self) private var store
+
+    var body: some View {
+        ScrollView(showsIndicators: false) {
+            VStack(alignment: .leading, spacing: 24) {
+                header
+
+                runCard
+
+                statGrid
+
+                chartSection
+
+                if store.mostEnjoyed != nil || store.hardest != nil {
+                    insightsSection
+                }
+
+                historySection
+            }
+            .padding(.horizontal, PhoneFreeTheme.screenPadding)
+            .padding(.top, 12)
+            .padding(.bottom, 40)
+        }
+        .background(PhoneFreeTheme.background)
+    }
+
+    // MARK: - Header
+
+    private var header: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text("PROGRESS")
+                .font(.system(size: 12, weight: .bold))
+                .tracking(3)
+                .foregroundStyle(PhoneFreeTheme.accent)
+
+            Text("What you've protected")
+                .font(.system(size: 26, weight: .semibold))
+                .foregroundStyle(.white)
+        }
+    }
+
+    // MARK: - Run
+
+    private var runCard: some View {
+        PhoneFreeCard(padding: 18) {
+            HStack(spacing: 16) {
+                ZStack {
+                    Circle()
+                        .fill(PhoneFreeTheme.accent.opacity(0.15))
+
+                    Text("\(store.goalRunDays)")
+                        .font(
+                            .system(size: 28, weight: .semibold, design: .rounded)
+                        )
+                        .foregroundStyle(PhoneFreeTheme.accent)
+                }
+                .frame(width: 64, height: 64)
+
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(
+                        store.goalRunDays == 1
+                            ? "1-day run"
+                            : "\(store.goalRunDays)-day run"
+                    )
+                    .font(.system(size: 18, weight: .semibold))
+                    .foregroundStyle(.white)
+
+                    Text(runSubtitle)
+                        .font(.system(size: 13))
+                        .foregroundStyle(PhoneFreeTheme.muted)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+
+                Spacer(minLength: 0)
+            }
+        }
+    }
+
+    private var runSubtitle: String {
+        if store.goalRunDays == 0 {
+            return "Finish a goal today and a run starts. Nothing is lost."
+        }
+
+        return "Days in a row you finished at least one goal."
+    }
+
+    // MARK: - Stats
+
+    private var statGrid: some View {
+        VStack(spacing: 12) {
+            HStack(spacing: 12) {
+                statCard(
+                    value: PhoneFreeFormat.duration(
+                        store.protectedSecondsToday
+                    ),
+                    label: "PROTECTED TODAY",
+                    symbol: "clock"
+                )
+
+                statCard(
+                    value: "\(store.pickupsToday)",
+                    label: "PICKED UP TODAY",
+                    symbol: "hand.raised"
+                )
+            }
+
+            HStack(spacing: 12) {
+                statCard(
+                    value: PhoneFreeFormat.clock(store.bestGapToday),
+                    label: "LONGEST PAUSE TODAY",
+                    symbol: "hourglass"
+                )
+
+                statCard(
+                    value: "\(store.completedGoalsToday)",
+                    label: "GOALS FINISHED",
+                    symbol: "checkmark.circle"
+                )
+            }
+
+            PhoneFreeCard {
+                HStack(spacing: 14) {
+                    Image(systemName: "trophy")
+                        .font(.system(size: 16))
+                        .foregroundStyle(PhoneFreeTheme.accent)
+
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(
+                            "Longest pause ever: "
+                            + PhoneFreeFormat.clock(store.longestGapEver)
+                        )
+                        .font(.system(size: 14, weight: .medium))
+                        .foregroundStyle(.white)
+
+                        Text(
+                            "Measured between one pickup and the next, "
+                            + "including the one running now."
+                        )
+                        .font(.system(size: 12))
+                        .foregroundStyle(PhoneFreeTheme.muted)
+                        .fixedSize(horizontal: false, vertical: true)
+                    }
+
+                    Spacer(minLength: 0)
+                }
+            }
+        }
+    }
+
+    private func statCard(
+        value: String,
+        label: String,
+        symbol: String
+    ) -> some View {
+        PhoneFreeCard {
+            VStack(alignment: .leading, spacing: 10) {
+                Image(systemName: symbol)
+                    .font(.system(size: 16))
+                    .foregroundStyle(PhoneFreeTheme.accent)
+
+                Text(value)
+                    .font(.system(size: 24, weight: .medium, design: .rounded))
+                    .foregroundStyle(.white)
+                    .minimumScaleFactor(0.7)
+                    .lineLimit(1)
+
+                Text(label)
+                    .font(.system(size: 9, weight: .bold))
+                    .tracking(0.9)
+                    .foregroundStyle(PhoneFreeTheme.muted)
+                    .lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+    }
+
+    // MARK: - Chart
+
+    private var chartSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            PhoneFreeSectionLabel("LAST 7 DAYS")
+
+            let data = store.dailyProtected(days: 7)
+            let hasData = data.contains { $0.seconds > 0 }
+
+            PhoneFreeCard(padding: 18) {
+                if hasData {
+                    Chart(data, id: \.date) { day in
+                        BarMark(
+                            x: .value("Day", day.date, unit: .day),
+                            y: .value("Minutes", day.seconds / 60)
+                        )
+                        .foregroundStyle(PhoneFreeTheme.accent)
+                        .cornerRadius(5)
+                    }
+                    .chartYAxis {
+                        AxisMarks(position: .leading) { value in
+                            AxisValueLabel {
+                                if let minutes = value.as(Double.self) {
+                                    Text("\(Int(minutes))m")
+                                }
+                            }
+                        }
+                    }
+                    .chartXAxis {
+                        AxisMarks(values: .stride(by: .day)) { _ in
+                            AxisValueLabel(
+                                format: .dateTime.weekday(.narrow)
+                            )
+                        }
+                    }
+                    .frame(height: 160)
+                } else {
+                    VStack(spacing: 6) {
+                        Text("No protected time yet")
+                            .font(.system(size: 15, weight: .medium))
+                            .foregroundStyle(.white)
+
+                        Text("Finish a goal and the bar for today will appear.")
+                            .font(.system(size: 12))
+                            .foregroundStyle(PhoneFreeTheme.muted)
+                            .multilineTextAlignment(.center)
+                    }
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 160)
+                }
+            }
+        }
+    }
+
+    // MARK: - Insights
+
+    private var insightsSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            PhoneFreeSectionLabel("WHAT WORKS FOR YOU")
+
+            VStack(spacing: 10) {
+                if let best = store.mostEnjoyed {
+                    insightRow(
+                        symbol: best.symbol,
+                        title: "You enjoy \(best.name.lowercased())",
+                        detail: "It'll come up in your suggestions again."
+                    )
+                }
+
+                if let hard = store.hardest {
+                    insightRow(
+                        symbol: "flame",
+                        title: "\(hard.name) felt hard",
+                        detail: "Try a shorter version, or something gentler."
+                    )
+                }
+            }
+        }
+    }
+
+    private func insightRow(
+        symbol: String,
+        title: String,
+        detail: String
+    ) -> some View {
+        PhoneFreeCard {
+            HStack(spacing: 14) {
+                Image(systemName: symbol)
+                    .font(.system(size: 16))
+                    .foregroundStyle(PhoneFreeTheme.accent)
+                    .frame(width: 26)
+
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(title)
+                        .font(.system(size: 14, weight: .medium))
+                        .foregroundStyle(.white)
+
+                    Text(detail)
+                        .font(.system(size: 12))
+                        .foregroundStyle(PhoneFreeTheme.muted)
+                }
+
+                Spacer(minLength: 0)
+            }
+        }
+    }
+
+    // MARK: - History
+
+    private var historySection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            PhoneFreeSectionLabel("TODAY")
+
+            let history = store.todayHistory
+
+            if history.isEmpty {
+                PhoneFreeCard {
+                    HStack(alignment: .top, spacing: 12) {
+                        Image(systemName: "sun.max")
+                            .font(.system(size: 18))
+                            .foregroundStyle(PhoneFreeTheme.accent)
+
+                        VStack(alignment: .leading, spacing: 5) {
+                            Text("A fresh start")
+                                .font(.system(size: 14, weight: .medium))
+                                .foregroundStyle(.white)
+
+                            Text(
+                                "Your phone-free moments will appear here."
+                            )
+                            .font(.system(size: 12))
+                            .foregroundStyle(PhoneFreeTheme.muted)
+                        }
+
+                        Spacer(minLength: 0)
+                    }
+                }
+            } else {
+                VStack(spacing: 10) {
+                    ForEach(history) { event in
+                        historyRow(event)
+                    }
+                }
+            }
+        }
+    }
+
+    private func historyRow(_ event: PhoneFreeEvent) -> some View {
+        let completed = event.kind == PhoneFreeEventKind.goalCompleted
+
+        return PhoneFreeCard {
+            HStack(spacing: 14) {
+                Image(
+                    systemName: completed
+                        ? "checkmark.circle.fill"
+                        : "pause.circle"
+                )
+                .font(.system(size: 18))
+                .foregroundStyle(
+                    completed ? PhoneFreeTheme.accent : PhoneFreeTheme.muted
+                )
+
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(title(for: event))
+                        .font(.system(size: 14, weight: .medium))
+                        .foregroundStyle(.white)
+
+                    Text(event.timestamp, style: .time)
+                        .font(.system(size: 12))
+                        .foregroundStyle(PhoneFreeTheme.muted)
+                }
+
+                Spacer(minLength: 0)
+
+                if let duration = event.duration {
+                    Text(PhoneFreeFormat.duration(duration))
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundStyle(PhoneFreeTheme.accent)
+                }
+            }
+        }
+    }
+
+    private func title(for event: PhoneFreeEvent) -> String {
+        switch event.kind {
+        case PhoneFreeEventKind.goalCompleted:
+            return "Goal completed"
+        case PhoneFreeEventKind.goalEnded:
+            return "Ended early"
+        case PhoneFreeEventKind.goalStarted:
+            return "Goal started"
+        default:
+            return event.note ?? "Phone-free moment"
+        }
+    }
+}
+
+#Preview {
+    PhoneFreeProgressView()
+        .environment(PhoneFreeStore())
+        .preferredColorScheme(.dark)
+}

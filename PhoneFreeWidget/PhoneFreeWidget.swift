@@ -9,6 +9,7 @@ struct PhoneFreeEntry: TimelineEntry {
     let goalActive: Bool
     let goalsCompletedToday: Int
     let protectedMinutesToday: Int
+    let lastCheckIn: Date?
 }
 
 struct PhoneFreeProvider: TimelineProvider {
@@ -18,7 +19,8 @@ struct PhoneFreeProvider: TimelineProvider {
             goalEnd: Date().addingTimeInterval(600),
             goalActive: true,
             goalsCompletedToday: 2,
-            protectedMinutesToday: 35
+            protectedMinutesToday: 35,
+            lastCheckIn: Date().addingTimeInterval(-3600)
         )
     }
 
@@ -87,7 +89,10 @@ struct PhoneFreeProvider: TimelineProvider {
             goalEnd: end,
             goalActive: active,
             goalsCompletedToday: completedCount,
-            protectedMinutesToday: Int(protectedSeconds / 60)
+            protectedMinutesToday: Int(protectedSeconds / 60),
+            lastCheckIn: defaults?.object(
+                forKey: "phoneFreeLastCheckIn"
+            ) as? Date
         )
     }
 }
@@ -150,6 +155,31 @@ struct PhoneFreeWidgetEntryView: View {
                         .foregroundStyle(.white.opacity(0.65))
                         .lineLimit(1)
                 }
+            } else if let lastCheckIn = entry.lastCheckIn {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("SINCE YOU LAST USED YOUR PHONE")
+                        .font(.system(size: 9, weight: .bold))
+                        .tracking(0.5)
+                        .foregroundStyle(.white.opacity(0.7))
+
+                    Text(lastCheckIn, style: .timer)
+                        .font(
+                            .system(
+                                size: 34,
+                                weight: .semibold,
+                                design: .rounded
+                            )
+                        )
+                        .monospacedDigit()
+                        .foregroundStyle(mint)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.55)
+
+                    Text("Put it down and this keeps counting.")
+                        .font(.system(size: 10))
+                        .foregroundStyle(.white.opacity(0.65))
+                        .lineLimit(1)
+                }
             } else {
                 VStack(alignment: .leading, spacing: 5) {
                     Text("Choose a goal.")
@@ -168,8 +198,8 @@ struct PhoneFreeWidgetEntryView: View {
             HStack(spacing: 8) {
                 Link(destination: URL(string: "phonefree://goal")!) {
                     HStack(spacing: 6) {
-                        Image(systemName: activeGoal ? "hourglass" : "moon.zzz.fill")
-                        Text(activeGoal ? "View goal" : "Choose a goal")
+                        Image(systemName: activeGoal ? "hourglass" : "iphone.slash")
+                        Text(activeGoal ? "View goal" : "Start a goal")
                     }
                     .font(.system(size: 12, weight: .bold))
                     .foregroundStyle(background)
@@ -243,6 +273,16 @@ struct PhoneFreeWidget: Widget {
         goalEnd: Date().addingTimeInterval(600),
         goalActive: true,
         goalsCompletedToday: 2,
-        protectedMinutesToday: 35
+        protectedMinutesToday: 35,
+        lastCheckIn: Date().addingTimeInterval(-3600)
+    )
+
+    PhoneFreeEntry(
+        date: .now,
+        goalEnd: nil,
+        goalActive: false,
+        goalsCompletedToday: 1,
+        protectedMinutesToday: 20,
+        lastCheckIn: Date().addingTimeInterval(-7200)
     )
 }
