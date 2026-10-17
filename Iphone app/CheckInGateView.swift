@@ -63,7 +63,7 @@ struct CheckInGateView: View {
 
                 Text(
                     "Still on it in "
-                    + PhoneFreeUsage.shortSeconds(resetAfter)
+                    + PhoneFreeUsage.words(resetAfter)
                     + " and your timer goes back to 0."
                 )
                     .font(.system(size: 14))

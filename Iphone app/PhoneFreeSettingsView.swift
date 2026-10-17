@@ -142,57 +142,11 @@ struct PhoneFreeSettingsView: View {
                     .foregroundStyle(PhoneFreeTheme.muted)
                     .fixedSize(horizontal: false, vertical: true)
 
-                    VStack(alignment: .leading, spacing: 8) {
-                        setupStep(1, "In Shortcuts, tap Automation, then New "
-                            + "Automation, then App.")
-                        setupStep(2, "Choose your apps. Tick Is Opened only, "
-                            + "and choose Run Immediately.")
-                        setupStep(3, "Add the PhoneFree action “I'm Using My "
-                            + "Phone”.")
-                        setupStep(4, "Make a second one for the same apps with "
-                            + "Is Closed and “I Put My Phone Down”.")
-                    }
+                    PhoneFreeShortcutsSetupSteps()
 
-                    Button {
-                        if let url = URL(string: "shortcuts://") {
-                            openURL(url)
-                        }
-                    } label: {
-                        HStack(spacing: 8) {
-                            Image(systemName: "square.2.layers.3d")
-
-                            Text("Open Shortcuts")
-                                .font(.system(size: 15, weight: .medium))
-                        }
-                        .foregroundStyle(.white)
-                        .frame(maxWidth: .infinity)
-                        .frame(height: 48)
-                        .background(Color.white.opacity(0.06))
-                        .clipShape(
-                            RoundedRectangle(
-                                cornerRadius: 14,
-                                style: .continuous
-                            )
-                        )
-                    }
-                    .buttonStyle(.plain)
+                    PhoneFreeAutomationStatusRow()
                 }
             }
-        }
-    }
-
-    private func setupStep(_ number: Int, _ text: String) -> some View {
-        HStack(alignment: .top, spacing: 10) {
-            Text("\(number)")
-                .font(.system(size: 12, weight: .bold, design: .rounded))
-                .foregroundStyle(PhoneFreeTheme.background)
-                .frame(width: 20, height: 20)
-                .background(PhoneFreeTheme.accent, in: Circle())
-
-            Text(text)
-                .font(.system(size: 13))
-                .foregroundStyle(.white)
-                .fixedSize(horizontal: false, vertical: true)
         }
     }
 
@@ -413,8 +367,8 @@ struct PhoneFreeSettingsView: View {
 
                         Text(
                             "Blocking other apps during a goal needs Apple's "
-                            + "Screen Time permission, which they grant review "
-                            + "-by-review. It's the next thing on the list."
+                            + "Screen Time permission, which they grant case by "
+                            + "case. It's the next thing on the list."
                         )
                         .font(.system(size: 12))
                         .foregroundStyle(PhoneFreeTheme.muted)
@@ -521,6 +475,14 @@ struct PhoneFreeSettingsView: View {
                     .font(.system(size: 13))
                     .foregroundStyle(PhoneFreeTheme.muted)
                     .fixedSize(horizontal: false, vertical: true)
+
+                    PhoneFreeSecondaryButton(
+                        title: "Show the introduction again",
+                        symbol: "sparkles"
+                    ) {
+                        store.showingOnboarding = true
+                    }
+                    .padding(.vertical, 4)
 
                     Text(appVersion)
                         .font(.system(size: 12))

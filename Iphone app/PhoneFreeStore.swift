@@ -97,6 +97,16 @@ final class PhoneFreeStore {
         }
     }
 
+    // MARK: Introduction
+
+    /// Shown on first launch, and again whenever Settings asks for it.
+    var showingOnboarding = false
+
+    func finishOnboarding() {
+        showingOnboarding = false
+        PhoneFreeUsage.defaults?.set(true, forKey: "phoneFreeOnboarded")
+    }
+
     // MARK: Gate presentation
 
     var showingPromiseGate = false
@@ -156,8 +166,9 @@ final class PhoneFreeStore {
             save()
         }
 
-        // Never stack the gate on top of an open reflection sheet.
-        guard !showingReflectionSheet else { return }
+        // Never stack the gate on top of an open reflection sheet, or behind
+        // the introduction — leaving to set up Shortcuts is not "away".
+        guard !showingReflectionSheet, !showingOnboarding else { return }
 
         guard gap >= checkInGateThreshold, gap <= checkInGateMaxGap else {
             return
@@ -864,6 +875,7 @@ final class PhoneFreeStore {
         }
 
         usage = PhoneFreeUsage.load()
+        showingOnboarding = !defaults.bool(forKey: "phoneFreeOnboarded")
 
         // Records used to be worked out from app-open times. Carry the old
         // best over once, so upgrading never wipes someone's record.

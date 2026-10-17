@@ -238,6 +238,19 @@ nonisolated enum PhoneFreeUsage {
         }
     }
 
+    /// "30 seconds", "1 minute", "2 minutes" — for sentences, where "1m"
+    /// would read as a code.
+    static func words(_ interval: TimeInterval) -> String {
+        let seconds = max(0, Int(interval.rounded()))
+
+        if seconds % 60 == 0, seconds >= 60 {
+            let minutes = seconds / 60
+            return minutes == 1 ? "1 minute" : "\(minutes) minutes"
+        }
+
+        return seconds == 1 ? "1 second" : "\(seconds) seconds"
+    }
+
     /// Short "45s", "1m", "2m" for reminders and captions.
     static func shortSeconds(_ interval: TimeInterval) -> String {
         let seconds = max(0, Int(interval.rounded()))

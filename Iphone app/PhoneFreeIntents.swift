@@ -39,6 +39,7 @@ struct StartPhoneUseIntent: AppIntent {
 
     func perform() async throws -> some IntentResult {
         let now = Date()
+        PhoneFreeAutomationHealth.mark(.opened, at: now)
 
         if PhoneFreeIntentGoal.isRunning(at: now) {
             try await continueInForeground(nil, alwaysConfirm: false)
@@ -79,6 +80,7 @@ struct StopPhoneUseIntent: AppIntent {
     static let supportedModes: IntentModes = .background
 
     func perform() async throws -> some IntentResult {
+        PhoneFreeAutomationHealth.mark(.closed)
         PhoneFreeUseReminders.putDown()
         return .result()
     }
@@ -99,6 +101,39 @@ struct PhoneFreeShortcuts: AppShortcutsProvider {
             shortTitle: "Put Phone Down",
             systemImageName: "iphone.slash"
         )
+    }
+}
+
+/// Whether the user's Shortcuts automations are actually firing. Setting
+/// them up is the fiddliest part of the app, so it is never left to faith:
+/// each action notes when it last ran, and the app can say "connected",
+/// "half set up" or "not set up yet".
+enum PhoneFreeAutomationHealth {
+    enum Signal: String {
+        case opened = "phoneFreeAutomationOpenedAt"
+        case closed = "phoneFreeAutomationClosedAt"
+    }
+
+    enum Status: Equatable {
+        case notSetUp
+        /// "Is Opened" works but "Is Closed" has never run, so the counter
+        /// only restarts when a session is given up on.
+        case missingClose
+        case connected(lastSeen: Date)
+    }
+
+    static func mark(_ signal: Signal, at date: Date = Date()) {
+        PhoneFreeUsage.defaults?.set(date, forKey: signal.rawValue)
+    }
+
+    static func lastSeen(_ signal: Signal) -> Date? {
+        PhoneFreeUsage.defaults?.object(forKey: signal.rawValue) as? Date
+    }
+
+    static var status: Status {
+        guard let opened = lastSeen(.opened) else { return .notSetUp }
+        guard let closed = lastSeen(.closed) else { return .missingClose }
+        return .connected(lastSeen: max(opened, closed))
     }
 }
 

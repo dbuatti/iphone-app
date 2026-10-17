@@ -126,6 +126,12 @@ struct ContentView: View {
                 break
             }
         }
+        .fullScreenCover(isPresented: $store.showingOnboarding) {
+            PhoneFreeOnboardingView {
+                store.finishOnboarding()
+            }
+            .environment(store)
+        }
         .sheet(isPresented: $store.showingReflectionSheet) {
             ReflectionSheet(
                 plan: store.pendingReflection,
