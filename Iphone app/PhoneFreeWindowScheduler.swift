@@ -27,8 +27,8 @@ final class PhoneFreeWindowScheduler {
     /// response handler can work out which window was tapped.
     static let windowRequestPrefix = "pf_window_"
 
-    /// Only when the app is in the background or the user has pulled the app
-    /// into an inactive state.
+    /// Button titles on a window reminder. Words, not icons, so the choice is
+    /// clear from the Lock Screen.
     private let startActionTitle = "Start phone-free"
     private let skipActionTitle = "Not now"
     private let categoryID = "PHONEFREE_WINDOW"

@@ -19,6 +19,10 @@ enum PhoneFreeTheme {
     /// Secondary text.
     static let muted = Color(red: 0.62, green: 0.65, blue: 0.74)
 
+    /// Soft coral for the rare destructive action (deleting data). Never used
+    /// for the user's own choices — ending a goal early is not an error.
+    static let caution = Color(red: 0.93, green: 0.55, blue: 0.55)
+
     /// Raised surface (cards).
     static let card = Color.white.opacity(0.05)
 

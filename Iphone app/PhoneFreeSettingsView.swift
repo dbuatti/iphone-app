@@ -301,7 +301,7 @@ struct PhoneFreeSettingsView: View {
                                 "“Since you last used your phone” never expires, "
                                 + "so it lives on a Lock Screen widget rather than "
                                 + "a Live Activity. Long-press your Lock Screen, "
-                                + "tap Customize, and add The Pause."
+                                + "tap Customize, and add PhoneFree."
                             )
                             .font(.caption)
                             .foregroundStyle(PhoneFreeTheme.muted)
@@ -491,7 +491,7 @@ struct PhoneFreeSettingsView: View {
                             Text("Clear everything")
                                 .font(.subheadline.weight(.medium))
                         }
-                        .foregroundStyle(Color(red: 0.93, green: 0.55, blue: 0.55))
+                        .foregroundStyle(PhoneFreeTheme.caution)
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 10)
                         .frame(minHeight: 48)

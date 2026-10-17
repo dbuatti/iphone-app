@@ -215,7 +215,7 @@ struct PhoneFreeWindowSettingsView: View {
                     PhoneFreeSecondaryButton(
                         title: "Delete",
                         symbol: "trash",
-                        tint: Color(red: 0.93, green: 0.55, blue: 0.55)
+                        tint: PhoneFreeTheme.caution
                     ) {
                         windows.remove(at: index)
                         windows = windows

@@ -33,6 +33,9 @@ nonisolated enum PhoneFreeUsage {
     static let lastCheckInKey = "phoneFreeLastCheckIn"
     static let usingSinceKey = "phoneFreeUsingSince"
     static let resetAfterKey = "phoneFreeResetAfter"
+    static let bestEverKey = "phoneFreeBestStretch"
+    static let bestTodayKey = "phoneFreeBestStretchToday"
+    static let bestTodayDayKey = "phoneFreeBestStretchDay"
 
     /// Seconds of use before the counter resets. Long enough to check the
     /// time or answer one message; short enough that scrolling never fits.
@@ -53,6 +56,21 @@ nonisolated enum PhoneFreeUsage {
         var lastCheckIn: Date?
         var usingSince: Date?
         var resetAfter: TimeInterval = PhoneFreeUsage.defaultResetAfter
+
+        /// The longest *finished* stretch ever, and today's. A stretch
+        /// finishes when the counter goes back to zero — not when the phone is
+        /// briefly picked up — so these always agree with the counter.
+        var bestEver: TimeInterval = 0
+        var bestToday: TimeInterval = 0
+        var bestTodayDay: Date?
+
+        /// Today's best finished stretch, or zero on a new day.
+        func bestFinishedToday(at now: Date) -> TimeInterval {
+            guard let bestTodayDay,
+                  Calendar.current.isDate(bestTodayDay, inSameDayAs: now)
+            else { return 0 }
+            return bestToday
+        }
 
         /// The moment the counter resets, while a use session is open.
         var resetsAt: Date? {
@@ -80,6 +98,13 @@ nonisolated enum PhoneFreeUsage {
         var frozenInterval: TimeInterval {
             guard let lastCheckIn, let usingSince else { return 0 }
             return max(0, usingSince.timeIntervalSince(lastCheckIn))
+        }
+
+        /// `true` when the open session puts something worth keeping at risk.
+        /// Below a minute there is nothing to lose, so the app stays quiet
+        /// rather than counting down over a zero.
+        var hasStretchAtStake: Bool {
+            usingSince != nil && frozenInterval >= 60
         }
 
         /// The number on screen.
@@ -125,6 +150,7 @@ nonisolated enum PhoneFreeUsage {
             if used < resetAfter, let lastCheckIn {
                 self.lastCheckIn = lastCheckIn.addingTimeInterval(used)
             } else {
+                record(frozenInterval, endedAt: usingSince)
                 self.lastCheckIn = now
             }
 
@@ -134,6 +160,12 @@ nonisolated enum PhoneFreeUsage {
         /// The counter starts again from zero right now (a goal starting, a
         /// promise broken, a clean slate).
         mutating func restart(at now: Date) {
+            if isUsing(at: now), let usingSince {
+                record(frozenInterval, endedAt: usingSince)
+            } else {
+                record(awayInterval(at: now), endedAt: now)
+            }
+
             lastCheckIn = now
             usingSince = nil
         }
@@ -144,9 +176,22 @@ nonisolated enum PhoneFreeUsage {
             guard isAbandoned(at: now), let resetsAt else { return self }
 
             var copy = self
+            copy.record(frozenInterval, endedAt: resetsAt)
             copy.lastCheckIn = resetsAt
             copy.usingSince = nil
             return copy
+        }
+
+        private mutating func record(_ stretch: TimeInterval, endedAt: Date) {
+            bestEver = max(bestEver, stretch)
+
+            if let bestTodayDay,
+               Calendar.current.isDate(bestTodayDay, inSameDayAs: endedAt) {
+                bestToday = max(bestToday, stretch)
+            } else {
+                bestToday = stretch
+                bestTodayDay = endedAt
+            }
         }
     }
 
@@ -164,7 +209,10 @@ nonisolated enum PhoneFreeUsage {
         return State(
             lastCheckIn: defaults?.object(forKey: lastCheckInKey) as? Date,
             usingSince: defaults?.object(forKey: usingSinceKey) as? Date,
-            resetAfter: resetAfter > 0 ? resetAfter : defaultResetAfter
+            resetAfter: resetAfter > 0 ? resetAfter : defaultResetAfter,
+            bestEver: defaults?.double(forKey: bestEverKey) ?? 0,
+            bestToday: defaults?.double(forKey: bestTodayKey) ?? 0,
+            bestTodayDay: defaults?.object(forKey: bestTodayDayKey) as? Date
         )
     }
 
@@ -182,6 +230,12 @@ nonisolated enum PhoneFreeUsage {
         }
 
         defaults.set(state.resetAfter, forKey: resetAfterKey)
+        defaults.set(state.bestEver, forKey: bestEverKey)
+        defaults.set(state.bestToday, forKey: bestTodayKey)
+
+        if let day = state.bestTodayDay {
+            defaults.set(day, forKey: bestTodayDayKey)
+        }
     }
 
     /// Short "45s", "1m", "2m" for reminders and captions.

@@ -351,7 +351,7 @@ final class PhoneFreeStore {
             PhoneFreeEvent(
                 timestamp: end,
                 kind: PhoneFreeEventKind.goalCompleted,
-                note: "\(effectiveGoalMinutes)-minute goal",
+                note: "\(max(1, Int((end.timeIntervalSince(start) / 60).rounded())))-minute goal",
                 duration: end.timeIntervalSince(start)
             )
         )
@@ -445,6 +445,16 @@ final class PhoneFreeStore {
         plan.isEmpty ? selectedMinutes : max(planTotalMinutes, 1)
     }
 
+    /// The length of the goal that is actually running. Differs from
+    /// `effectiveGoalMinutes` when a window reminder started it ("until
+    /// 07:00"), so screens must use this once a goal has begun.
+    var runningGoalMinutes: Int {
+        guard let start = goalStart, let end = goalEnd else {
+            return effectiveGoalMinutes
+        }
+        return max(1, Int((end.timeIntervalSince(start) / 60).rounded()))
+    }
+
     /// Turns the plan into the timed segments the Live Activity renders. Each
     /// one starts where the previous ended.
     func buildSegments(from start: Date) -> [PhoneFreeActivitySegment] {
@@ -512,6 +522,12 @@ final class PhoneFreeStore {
         !goalActive && usage.isUsing(at: date)
     }
 
+    /// `true` when the grace-period countdown is worth showing: the phone is
+    /// in use and there is at least a minute of stretch at stake.
+    func showsResetCountdown(at date: Date = Date()) -> Bool {
+        isUsingPhone(at: date) && usage.hasStretchAtStake
+    }
+
     /// Where the goal has got to, for the progress ring.
     func goalProgress(at date: Date) -> Double {
         guard goalActive, let start = goalStart, let end = goalEnd else {
@@ -555,58 +571,35 @@ final class PhoneFreeStore {
             .reduce(0) { $0 + ($1.duration ?? 0) }
     }
 
-    /// The longest stretch away from the phone today: either a finished gap
-    /// between two pickups, or the one still running.
+    /// The longest stretch away from the phone today: either a finished one,
+    /// or the one still running. Kept by the shared clock, so it always agrees
+    /// with the counter the user is looking at.
     var bestGapToday: TimeInterval {
-        let timestamps = pickupTimestamps(on: Date())
-
-        var best: TimeInterval = 0
-
-        for (previous, next) in zip(timestamps, timestamps.dropFirst()) {
-            best = max(best, next.timeIntervalSince(previous))
-        }
-
-        return max(best, awayInterval())
+        max(usage.bestFinishedToday(at: Date()), awayInterval())
     }
 
     /// The longest stretch away, ever. Flattering, but true.
     var longestGapEver: TimeInterval {
-        let all = events
-            .filter { $0.kind == PhoneFreeEventKind.pickup }
-            .map(\.timestamp)
-            .sorted()
-
-        var best: TimeInterval = 0
-
-        for (previous, next) in zip(all, all.dropFirst()) {
-            best = max(best, next.timeIntervalSince(previous))
-        }
-
-        return max(best, awayInterval())
+        max(bestCompletedGapEver, awayInterval())
     }
 
     /// The longest stretch away that is *finished*. Excludes the run happening
     /// right now, so "is this a new record?" has an honest answer.
     var bestCompletedGapEver: TimeInterval {
-        let all = events
-            .filter { $0.kind == PhoneFreeEventKind.pickup }
-            .map(\.timestamp)
-            .sorted()
-
-        var best: TimeInterval = 0
-
-        for (previous, next) in zip(all, all.dropFirst()) {
-            best = max(best, next.timeIntervalSince(previous))
-        }
-
-        return best
+        usage.bestEver
     }
 
     /// `true` when the stretch happening right now has already beaten every
-    /// finished one. Guarded on `> 0` so a fresh install does not instantly
+    /// finished one. Guarded on `hasRecord` so a fresh install does not instantly
     /// declare a record on its first second of use.
     var isNewLongestGap: Bool {
-        bestCompletedGapEver > 0 && awayInterval() > bestCompletedGapEver
+        hasRecord && awayInterval() > bestCompletedGapEver
+    }
+
+    /// A record under a minute is noise, not an achievement — praising it
+    /// would cheapen the real ones.
+    var hasRecord: Bool {
+        bestCompletedGapEver >= 60
     }
 
     // MARK: - Targets
@@ -729,7 +722,7 @@ final class PhoneFreeStore {
            let end = goalEnd,
            end > Date() {
             PhoneFreeLiveActivityManager.shared.restoreIfNeeded(
-                minutes: effectiveGoalMinutes,
+                minutes: runningGoalMinutes,
                 start: start,
                 end: end,
                 segments: buildSegments(from: start)
@@ -803,16 +796,6 @@ final class PhoneFreeStore {
 
     // MARK: - Pickups
 
-    private func pickupTimestamps(on date: Date) -> [Date] {
-        events
-            .filter {
-                $0.kind == PhoneFreeEventKind.pickup &&
-                Calendar.current.isDate($0.timestamp, inSameDayAs: date)
-            }
-            .map(\.timestamp)
-            .sorted()
-    }
-
     /// Every activation of the app is a pickup. It is a proxy — iOS gives apps
     /// no way to see real unlocks — but an honest one, and labelled as such.
     private func logPickup(at date: Date) {
@@ -881,6 +864,22 @@ final class PhoneFreeStore {
         }
 
         usage = PhoneFreeUsage.load()
+
+        // Records used to be worked out from app-open times. Carry the old
+        // best over once, so upgrading never wipes someone's record.
+        if usage.bestEver == 0 {
+            let opens = events
+                .filter { $0.kind == PhoneFreeEventKind.pickup }
+                .map(\.timestamp)
+                .sorted()
+
+            for (previous, next) in zip(opens, opens.dropFirst()) {
+                usage.bestEver = max(
+                    usage.bestEver,
+                    next.timeIntervalSince(previous)
+                )
+            }
+        }
 
         if defaults.object(forKey: "phoneFreeGoalNudges") != nil {
             goalNudgesEnabled = defaults.bool(forKey: "phoneFreeGoalNudges")

@@ -11,9 +11,9 @@ import SwiftUI
 
 // MARK: - Shared look
 
-private let gateBackground = Color(red: 0.055, green: 0.065, blue: 0.12)
-private let gateAccent = Color(red: 0.65, green: 0.91, blue: 0.79)
-private let gateMuted = Color(red: 0.62, green: 0.65, blue: 0.74)
+private let gateBackground = PhoneFreeTheme.background
+private let gateAccent = PhoneFreeTheme.accent
+private let gateMuted = PhoneFreeTheme.muted
 
 // MARK: - Plan builder
 
