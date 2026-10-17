@@ -15,29 +15,14 @@ import SwiftUI
 struct CheckInGateView: View {
     let awayFor: TimeInterval
     let bestToday: TimeInterval
-    let checkInsToday: Int
     let resetAfter: TimeInterval
 
     let onPutItDown: () -> Void
     let onUseAnyway: () -> Void
 
-    private let background = Color(
-        red: 0.055,
-        green: 0.065,
-        blue: 0.12
-    )
-
-    private let accent = Color(
-        red: 0.65,
-        green: 0.91,
-        blue: 0.79
-    )
-
-    private let muted = Color(
-        red: 0.62,
-        green: 0.65,
-        blue: 0.74
-    )
+    private let background = PhoneFreeTheme.background
+    private let accent = PhoneFreeTheme.accent
+    private let muted = PhoneFreeTheme.muted
 
     var body: some View {
         ZStack {
@@ -87,8 +72,13 @@ struct CheckInGateView: View {
                     .fixedSize(horizontal: false, vertical: true)
                     .padding(.top, 8)
 
-                if checkInsToday > 0 {
-                    Text(summary)
+                // Today's best, not today's count: a tally of pick-ups turns
+                // into something to check and feel bad about.
+                if bestToday >= 60 {
+                    Text(
+                        "Your best stretch today is "
+                        + formatDuration(bestToday) + "."
+                    )
                         .font(.system(size: 12))
                         .foregroundStyle(muted)
                         .multilineTextAlignment(.center)
@@ -130,17 +120,6 @@ struct CheckInGateView: View {
         .preferredColorScheme(.dark)
     }
 
-    private var summary: String {
-        let times = checkInsToday == 1 ? "time" : "times"
-
-        guard bestToday > 0 else {
-            return "You've opened PhoneFree \(checkInsToday) \(times) today."
-        }
-
-        return "You've opened PhoneFree \(checkInsToday) \(times) today. "
-            + "Your best is \(formatDuration(bestToday))."
-    }
-
     private func formatDuration(_ interval: TimeInterval) -> String {
         let seconds = max(0, Int(interval))
         let hours = seconds / 3600
@@ -164,7 +143,6 @@ struct CheckInGateView: View {
     CheckInGateView(
         awayFor: 4 * 3600 + 12 * 60 + 33,
         bestToday: 5 * 3600 + 2 * 60,
-        checkInsToday: 3,
         resetAfter: 60,
         onPutItDown: {},
         onUseAnyway: {}

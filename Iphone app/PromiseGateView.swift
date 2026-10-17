@@ -6,13 +6,17 @@
 //  goal is running. Ending the goal early is deliberately slow: the user must
 //  actively hold a button and then wait out a countdown.
 //
+//  Slow, but never shaming. Ending early is the user's choice, not a moral
+//  failure, so there is no red, no "broken promise", and no tally of how
+//  often they reached for the phone — guilt is what drives the next scroll,
+//  and for OCD it can turn a goal into a rule that must not be broken.
+//
 
 import SwiftUI
 
 struct PromiseGateView: View {
     let goalEnd: Date
     let goalMinutes: Int
-    let reachedToday: Int
 
     let onKeepGoing: () -> Void
     let onBreakPromise: () -> Void
@@ -26,23 +30,9 @@ struct PromiseGateView: View {
     @State private var isHolding = false
     @State private var cooldownStart: Date?
 
-    private let background = Color(
-        red: 0.055,
-        green: 0.065,
-        blue: 0.12
-    )
-
-    private let accent = Color(
-        red: 0.65,
-        green: 0.91,
-        blue: 0.79
-    )
-
-    private let muted = Color(
-        red: 0.62,
-        green: 0.65,
-        blue: 0.74
-    )
+    private let background = PhoneFreeTheme.background
+    private let accent = PhoneFreeTheme.accent
+    private let muted = PhoneFreeTheme.muted
 
     private let holdDuration: Double = 3
     private let cooldownSeconds: Double = 10
@@ -72,11 +62,14 @@ struct PromiseGateView: View {
                 .foregroundStyle(accent)
 
             VStack(spacing: 10) {
-                Text("You're in a promise.")
+                Text("You're in a phone-free goal.")
                     .font(.system(size: 27, weight: .semibold))
                     .foregroundStyle(.white)
 
-                Text("You picked up your phone. That's okay —\nthe urge passes in about 90 seconds.")
+                Text(
+                    "You picked up your phone. That's okay. Urges usually "
+                    + "fade within a minute or two if you wait them out."
+                )
                     .font(.system(size: 14))
                     .foregroundStyle(muted)
                     .multilineTextAlignment(.center)
@@ -115,17 +108,6 @@ struct PromiseGateView: View {
             }
             .padding(.top, 34)
 
-            if reachedToday > 0 {
-                Text(
-                    "You've reached for your phone \(reachedToday) "
-                    + (reachedToday == 1 ? "time" : "times") + " today."
-                )
-                .font(.system(size: 13))
-                .foregroundStyle(muted)
-                .multilineTextAlignment(.center)
-                .padding(.top, 22)
-            }
-
             Spacer()
 
             VStack(spacing: 14) {
@@ -162,11 +144,14 @@ struct PromiseGateView: View {
         VStack(spacing: 0) {
             Spacer()
 
-            Text("Break your promise?")
+            Text("End this goal early?")
                 .font(.system(size: 25, weight: .semibold))
                 .foregroundStyle(.white)
 
-            Text("Going back now means the time you've\nalready protected still counts — but you'll end early.")
+            Text(
+                "The time you've already protected still counts. Take a "
+                + "breath first — you can always start another goal."
+            )
                 .font(.system(size: 14))
                 .foregroundStyle(muted)
                 .multilineTextAlignment(.center)
@@ -190,17 +175,15 @@ struct PromiseGateView: View {
                     } label: {
                         Text(
                             ready
-                                ? "Yes, break my promise"
+                                ? "Yes, end it now"
                                 : "Wait \(Int(ceil(left)))s…"
                         )
                         .font(.system(size: 16, weight: .semibold))
-                        .foregroundStyle(ready ? .white : muted)
+                        .foregroundStyle(.white.opacity(ready ? 1 : 0.5))
                         .frame(maxWidth: .infinity)
                         .frame(height: 58)
                         .background(
-                            ready
-                                ? Color(red: 0.85, green: 0.35, blue: 0.35)
-                                : .white.opacity(0.05)
+                            .white.opacity(ready ? 0.12 : 0.05)
                         )
                         .clipShape(RoundedRectangle(cornerRadius: 17))
                     }
@@ -216,7 +199,7 @@ struct PromiseGateView: View {
                 isHolding = false
                 cooldownStart = nil
             } label: {
-                Text("Take me back")
+                Text("Keep going instead")
                     .font(.system(size: 14, weight: .medium))
                     .foregroundStyle(accent)
                     .frame(maxWidth: .infinity)
@@ -247,7 +230,7 @@ struct PromiseGateView: View {
             }
             .clipShape(RoundedRectangle(cornerRadius: 17))
 
-            Text(isHolding ? "Keep holding…" : "Hold to unlock")
+            Text(isHolding ? "Keep holding…" : "Hold for 3 seconds to continue")
                 .font(.system(size: 16, weight: .semibold))
                 .foregroundStyle(.white)
         }
@@ -291,7 +274,6 @@ struct PromiseGateView: View {
     PromiseGateView(
         goalEnd: Date().addingTimeInterval(12 * 60),
         goalMinutes: 20,
-        reachedToday: 4,
         onKeepGoing: {},
         onBreakPromise: {}
     )

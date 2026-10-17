@@ -142,8 +142,7 @@ struct ContentView: View {
         if store.showingPromiseGate, let goalEnd = store.goalEnd {
             PromiseGateView(
                 goalEnd: goalEnd,
-                goalMinutes: store.effectiveGoalMinutes,
-                reachedToday: store.pickupsToday,
+                goalMinutes: store.runningGoalMinutes,
                 onKeepGoing: { store.keepGoing() },
                 onBreakPromise: { store.breakPromise() }
             )
@@ -153,7 +152,6 @@ struct ContentView: View {
             CheckInGateView(
                 awayFor: store.checkInGateGap,
                 bestToday: store.bestGapToday,
-                checkInsToday: store.pickupsToday,
                 resetAfter: store.resetAfter,
                 onPutItDown: { store.putItDown() },
                 onUseAnyway: { store.confirmPhoneUse() }

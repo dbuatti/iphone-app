@@ -67,18 +67,18 @@ enum PhoneFreeUseReminders {
                 let content = UNMutableNotificationContent()
 
                 if remaining > 0 {
-                    content.title = "Still on your phone?"
-                    content.body = hasStreak
-                        ? "Your \(streak) streak resets in "
-                            + "\(PhoneFreeUsage.shortSeconds(remaining)). "
-                            + "Is this worth it?"
-                        : "Your timer resets in "
-                            + "\(PhoneFreeUsage.shortSeconds(remaining)). "
-                            + "Is this worth it?"
+                    // A question and one concrete thing to do — never a
+                    // judgement. Shame is what keeps people scrolling.
+                    content.title = "Do you still want to be on your phone?"
+                    content.body = (hasStreak
+                        ? "Your \(streak) resets in "
+                        : "Your timer resets in ")
+                        + "\(PhoneFreeUsage.shortSeconds(remaining)). "
+                        + "Lock your phone to keep it."
                 } else {
-                    content.title = "Timer reset"
-                    content.body = "It starts counting again when you put your "
-                        + "phone down."
+                    content.title = "Your timer started again"
+                    content.body = "That's okay. It counts up again from the "
+                        + "moment you put your phone down."
                 }
 
                 content.categoryIdentifier = categoryID

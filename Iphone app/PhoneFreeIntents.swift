@@ -52,8 +52,9 @@ struct StartPhoneUseIntent: AppIntent {
         PhoneFreeUsage.save(state)
 
         // Moving between two watched apps keeps the same session and the same
-        // countdown; only a fresh pick-up starts the reminders.
-        if !alreadyUsing {
+        // countdown; only a fresh pick-up starts the reminders. With less than
+        // a minute at stake there is nothing to lose, so no reminders either.
+        if !alreadyUsing, state.hasStretchAtStake {
             PhoneFreeUseReminders.schedule(for: state, now: now)
         }
 

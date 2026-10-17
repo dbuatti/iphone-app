@@ -122,21 +122,11 @@ struct PhoneFreeProvider: TimelineProvider {
                     $0 + ($1.duration ?? 0)
                 }
 
-            // The longest *finished* stretch away, ever. The run happening
-            // right now is deliberately excluded, so the widget never calls
-            // the current gap its own record.
-            let pickups = events
-                .filter { $0.kind == "reach" }
-                .map(\.timestamp)
-                .sorted()
-
-            for (previous, next) in zip(pickups, pickups.dropFirst()) {
-                bestGapSeconds = max(
-                    bestGapSeconds,
-                    next.timeIntervalSince(previous)
-                )
-            }
         }
+
+        // The longest *finished* stretch, from the same clock the app uses,
+        // so the widget and the app never show two different records.
+        bestGapSeconds = usage.bestEver
 
         let gap = usage.awayInterval(at: now)
 
@@ -551,7 +541,7 @@ struct PhoneFreeWidget: Widget {
         ) { entry in
             PhoneFreeWidgetEntryView(entry: entry)
         }
-        .configurationDisplayName("The Pause")
+        .configurationDisplayName("PhoneFree")
         .description(
             "Your away counter, on the Home Screen and the Lock Screen."
         )

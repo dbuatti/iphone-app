@@ -24,7 +24,7 @@ struct PhoneFreeAwayView: View {
             VStack(spacing: 26) {
                 header
 
-                if store.isUsingPhone() {
+                if store.showsResetCountdown() {
                     usageBanner
                 }
 
@@ -82,9 +82,7 @@ struct PhoneFreeAwayView: View {
             TimelineView(.periodic(from: .now, by: 1)) { context in
                 VStack(spacing: 16) {
                     Text(
-                        store.isUsingPhone(at: context.date)
-                            ? "PAUSED — YOU'RE ON YOUR PHONE"
-                            : "SINCE YOU LAST USED YOUR PHONE"
+                        heroCaption(at: context.date)
                     )
                     .font(.system(size: 11, weight: .bold))
                     .tracking(1.6)
@@ -305,7 +303,7 @@ struct PhoneFreeAwayView: View {
             }
             .font(.system(size: 12, weight: .semibold))
             .foregroundStyle(PhoneFreeTheme.accent)
-        } else if store.bestCompletedGapEver > 0 {
+        } else if store.hasRecord {
             Text(
                 "Your record "
                 + PhoneFreeFormat.clock(store.bestCompletedGapEver)
@@ -357,12 +355,12 @@ struct PhoneFreeAwayView: View {
 
             PhoneFreeCard {
                 VStack(alignment: .leading, spacing: 6) {
-                    Text("Your promise")
+                    Text("Your goal")
                         .font(.system(size: 15, weight: .semibold))
                         .foregroundStyle(.white)
 
                     Text(
-                        "\(store.effectiveGoalMinutes) minutes, started "
+                        "\(store.runningGoalMinutes) minutes, started "
                         + (store.goalStart ?? Date()).formatted(
                             date: .omitted,
                             time: .shortened
@@ -561,21 +559,22 @@ struct PhoneFreeAwayView: View {
     // MARK: - Today
 
     private var todaySummary: some View {
-        HStack(spacing: 12) {
+        // Things gained, not things given in to. A count of pick-ups on the
+        // home screen becomes one more number to check and feel bad about.
+        HStack(alignment: .top, spacing: 12) {
             statCard(
-                value: "\(store.pickupsToday)",
-                label: "TIMES YOU OPENED PHONEFREE",
-                symbol: "hand.raised"
+                value: PhoneFreeFormat.clock(store.bestGapToday),
+                label: "BEST STRETCH TODAY",
+                symbol: "star"
             )
 
             statCard(
-                value: store.completedGoalsToday == 1
-                    ? "1"
-                    : "\(store.completedGoalsToday)",
-                label: "GOALS FINISHED",
+                value: "\(store.completedGoalsToday)",
+                label: "GOALS FINISHED TODAY",
                 symbol: "checkmark.circle"
             )
         }
+        .fixedSize(horizontal: false, vertical: true)
     }
 
     private func statCard(
@@ -599,8 +598,21 @@ struct PhoneFreeAwayView: View {
                     .foregroundStyle(PhoneFreeTheme.muted)
                     .lineLimit(2)
                     .fixedSize(horizontal: false, vertical: true)
+
+                Spacer(minLength: 0)
             }
+            .frame(maxHeight: .infinity, alignment: .top)
         }
+    }
+
+    private func heroCaption(at date: Date) -> String {
+        guard store.showsResetCountdown(at: date) else {
+            return "SINCE YOU LAST USED YOUR PHONE"
+        }
+
+        return store.usage.hasReset(at: date)
+            ? "STARTS WHEN YOU PUT YOUR PHONE DOWN"
+            : "PAUSED — YOU'RE ON YOUR PHONE"
     }
 
     // MARK: - Using the phone
@@ -631,7 +643,7 @@ struct PhoneFreeAwayView: View {
                         VStack(alignment: .leading, spacing: 4) {
                             Text(
                                 reset
-                                    ? "Your timer reset"
+                                    ? "Your timer started again"
                                     : "Timer resets in "
                                         + PhoneFreeUsage.shortSeconds(left)
                             )
@@ -641,8 +653,8 @@ struct PhoneFreeAwayView: View {
 
                             Text(
                                 reset
-                                    ? "It starts counting again the moment you "
-                                        + "put your phone down."
+                                    ? "That's okay. It counts up again from the "
+                                        + "moment you put your phone down."
                                     : "You're on your phone, so the counter is "
                                         + "paused. Put it down now and "
                                         + (usage.frozenInterval >= 60
@@ -667,23 +679,14 @@ struct PhoneFreeAwayView: View {
                             label: "Time left before your timer resets"
                         )
 
-                        Button {
+                        // Secondary on purpose: "start a goal" further down
+                        // stays the one filled button on this screen.
+                        PhoneFreeSecondaryButton(
+                            title: "I'll put it down",
+                            tint: PhoneFreeTheme.accent
+                        ) {
                             store.putItDown()
-                        } label: {
-                            Text("I'll put it down")
-                                .font(.system(size: 15, weight: .semibold))
-                                .foregroundStyle(PhoneFreeTheme.background)
-                                .frame(maxWidth: .infinity)
-                                .frame(height: 46)
-                                .background(PhoneFreeTheme.accent)
-                                .clipShape(
-                                    RoundedRectangle(
-                                        cornerRadius: 14,
-                                        style: .continuous
-                                    )
-                                )
                         }
-                        .buttonStyle(.plain)
                     }
                 }
             }
