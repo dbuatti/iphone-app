@@ -215,16 +215,6 @@ struct PhoneFreeWidgetLiveActivity: Widget {
         )
     }
 
-    private func clock(_ interval: TimeInterval) -> String {
-        let seconds = max(0, Int(interval))
-        let hours = seconds / 3600
-        let minutes = (seconds % 3600) / 60
-
-        return hours > 0
-            ? String(format: "%d:%02d:%02d", hours, minutes, seconds % 60)
-            : String(format: "%d:%02d", minutes, seconds % 60)
-    }
-
     /// The number that answers "how long since I last used this?" on the Lock
     /// Screen — the surface you look at with the phone already down.
     ///
@@ -324,16 +314,19 @@ struct PhoneFreeWidgetLiveActivity: Widget {
         case .counting:
             Text("Since you last used your phone")
         case .paused(_, let usingSince, let resetsAt, let shieldLeft):
-            if let shieldLeft {
-                HStack(spacing: 4) {
+            HStack(spacing: 4) {
+                if shieldLeft != nil {
                     Image(systemName: "bolt.fill")
-                    Text("Free time · \(clock(shieldLeft)) left")
-                }
-            } else {
-                HStack(spacing: 4) {
+                    Text("Free time ·")
+                } else {
                     Text("On your phone · resets in")
-                    Text(timerInterval: usingSince...resetsAt, countsDown: true)
-                        .monospacedDigit()
+                }
+
+                Text(timerInterval: usingSince...resetsAt, countsDown: true)
+                    .monospacedDigit()
+
+                if shieldLeft != nil {
+                    Text("left")
                 }
             }
         case .reset:

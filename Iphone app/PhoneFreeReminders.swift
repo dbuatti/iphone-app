@@ -105,6 +105,11 @@ enum PhoneFreeUseReminders {
         // that is most likely to be seen.
         var fireAt = now.addingTimeInterval(PhoneFreeUsage.reminderInterval)
 
+        // With free time banked the streak is not actually at risk through the
+        // grace — the bank pays for it — so the same nudge has to say something
+        // different, or it would be telling a small lie.
+        let banked = state.surplus > 0
+
         while fireAt < min(resetsAt, baseEnd), index < maxReminders - 1 {
             let remaining = resetsAt.timeIntervalSince(fireAt)
 
@@ -113,11 +118,16 @@ enum PhoneFreeUseReminders {
             add(
                 delay: fireAt.timeIntervalSince(now),
                 title: "Do you still want to be on your phone?",
-                body: (hasStreak
-                    ? "Your \(streak) resets in "
-                    : "Your timer resets in ")
-                    + "\(PhoneFreeUsage.shortSeconds(remaining)). "
-                    + "Lock your phone to keep it."
+                body: banked
+                    ? "Your streak is safe — "
+                        + "\(PhoneFreeUsage.shortSeconds(remaining)) of banked "
+                        + "free time left. Put your phone down to keep what's "
+                        + "left."
+                    : (hasStreak
+                        ? "Your \(streak) resets in "
+                        : "Your timer resets in ")
+                        + "\(PhoneFreeUsage.shortSeconds(remaining)). "
+                        + "Lock your phone to keep it."
             )
 
             fireAt = fireAt.addingTimeInterval(PhoneFreeUsage.reminderInterval)
