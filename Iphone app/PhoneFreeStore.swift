@@ -68,9 +68,34 @@ final class PhoneFreeStore {
     var reflections: [PhoneFreeReflection] = []
     var windows: [PhoneFreeWindow] = []
 
-    /// The last moment the user *gave in* and used the phone. Everything the
-    /// app shows counts up from here. Persisted.
-    var lastCheckIn: Date?
+    /// Where the away counter counts from, and whether the phone is being
+    /// used right now. Shared with the Shortcuts actions and the widget, so it
+    /// lives in `PhoneFreeUsage` and is persisted through it.
+    var usage = PhoneFreeUsage.State()
+
+    /// Where the current stretch away counts from.
+    var lastCheckIn: Date? {
+        get { usage.lastCheckIn }
+        set { usage.lastCheckIn = newValue }
+    }
+
+    /// Seconds of use before the counter resets. Chosen in Settings.
+    var resetAfter: TimeInterval {
+        get { usage.resetAfter }
+        set {
+            usage.resetAfter = newValue
+            save()
+        }
+    }
+
+    /// Repeating Lock Screen reminders while a goal runs. Chosen in Settings.
+    var goalNudgesEnabled = true {
+        didSet {
+            guard didLoad else { return }
+            save()
+            rescheduleGoalNudges()
+        }
+    }
 
     // MARK: Gate presentation
 
@@ -78,11 +103,11 @@ final class PhoneFreeStore {
     var showingCheckInGate = false
     var checkInGateGap: TimeInterval = 0
 
-    /// Set while the user is being shown *why* the timer restarted, so the home
-    /// screen can say so once and then forget it.
-    var justRestartedFrom: TimeInterval?
-
     private var promiseGateShownThisSession = false
+
+    /// Set by "I'll put it down" so the rest of this visit to the app does not
+    /// immediately count as using the phone again.
+    private var putDownThisSession = false
     private var lastCheckInGateShownAt: Date?
     private var didLoad = false
 
@@ -101,6 +126,9 @@ final class PhoneFreeStore {
 
     /// Called when the app appears and whenever it comes back to the front.
     func handleBecameActive() {
+        // The Shortcuts actions may have changed the counter while the app
+        // was in the background.
+        reloadUsage()
         finishExpiredGoalIfNeeded()
 
         let now = Date()
@@ -117,17 +145,19 @@ final class PhoneFreeStore {
             return
         }
 
-        // No goal running. This is the check-in moment.
-        guard let last = lastCheckIn else {
-            lastCheckIn = now
+        // No goal running, so having the app open *is* using the phone: the
+        // counter freezes, and resets if this goes on past the grace period.
+        // The number the gate shows is read before that, so it is the stretch
+        // the user is about to put at risk.
+        let gap = usage.awayInterval(at: now)
+
+        if !putDownThisSession {
+            usage.beginUse(at: now)
             save()
-            return
         }
 
         // Never stack the gate on top of an open reflection sheet.
         guard !showingReflectionSheet else { return }
-
-        let gap = now.timeIntervalSince(last)
 
         guard gap >= checkInGateThreshold, gap <= checkInGateMaxGap else {
             return
@@ -147,8 +177,28 @@ final class PhoneFreeStore {
 
     /// Called when the app leaves the front, so the gates can appear again the
     /// next time it is opened. That repeat is the point.
+    ///
+    /// Leaving the app is the one "put down" signal iOS does give, so the use
+    /// session it opened ends here.
     func handleResignedActive() {
         promiseGateShownThisSession = false
+        putDownThisSession = false
+
+        guard !goalActive else { return }
+
+        usage.endUse(at: Date())
+        save()
+        PhoneFreeUseReminders.cancel()
+    }
+
+    /// Re-reads the counter that the Shortcuts actions share with the app.
+    func reloadUsage() {
+        let shared = PhoneFreeUsage.load()
+        usage = shared.settled(at: Date())
+
+        if usage != shared {
+            save()
+        }
     }
 
     /// The goal's own clock runs down whether or not the app is open.
@@ -183,7 +233,8 @@ final class PhoneFreeStore {
 
         // Starting a goal is itself a promise to stop using the phone, so the
         // streak clock starts here.
-        lastCheckIn = now
+        usage.restart(at: now)
+        PhoneFreeUseReminders.cancel()
 
         events.append(
             PhoneFreeEvent(
@@ -202,6 +253,13 @@ final class PhoneFreeStore {
             end: end,
             segments: buildSegments(from: now)
         )
+
+        // The nudges need permission. Asking here, as the goal starts, is
+        // when the reason is obvious; iOS only shows the prompt once.
+        Task {
+            _ = await PhoneFreeWindowScheduler.shared.requestAuthorization()
+            rescheduleGoalNudges()
+        }
     }
 
     /// Called when the user taps a phone-free window reminder. They have
@@ -213,7 +271,6 @@ final class PhoneFreeStore {
     func startGoalFromReminder(windowID: String?) {
         showingCheckInGate = false
         showingPromiseGate = false
-        justRestartedFrom = nil
 
         // They are not being asked about ending anything — they are starting.
         promiseGateShownThisSession = true
@@ -269,12 +326,15 @@ final class PhoneFreeStore {
         goalEnd = nil
         showingPromiseGate = false
 
-        // They are using the phone now, so the streak clock restarts.
-        lastCheckIn = now
+        // They are using the phone now, so the streak clock restarts — and,
+        // since the app is open, it is held at zero until they put it down.
+        usage.restart(at: now)
+        usage.beginUse(at: now)
 
         save()
 
         PhoneFreeLiveActivityManager.shared.end()
+        PhoneFreeGoalNudges.cancel()
         syncLockScreenCounter()
 
         requestReflectionIfPlanned()
@@ -306,33 +366,40 @@ final class PhoneFreeStore {
         save()
 
         PhoneFreeLiveActivityManager.shared.end()
+        PhoneFreeGoalNudges.cancel()
         syncLockScreenCounter()
 
         requestReflectionIfPlanned()
     }
 
+    private func rescheduleGoalNudges() {
+        guard goalActive, goalNudgesEnabled,
+              let start = goalStart, let end = goalEnd else {
+            PhoneFreeGoalNudges.cancel()
+            return
+        }
+
+        PhoneFreeGoalNudges.schedule(start: start, end: end)
+    }
+
     // MARK: - Check-in gate
 
-    /// "Use it anyway" — the user has decided to use the phone. The clock goes
-    /// back to zero. Recorded so today's best is not quietly inflated.
+    /// "Use it anyway" — the gate goes, and the grace period that began when
+    /// the app opened keeps running. Nothing is reset yet: the reset happens
+    /// only if they are still on the phone when it runs out.
     func confirmPhoneUse() {
-        justRestartedFrom = checkInGateGap
-
-        lastCheckIn = Date()
         showingCheckInGate = false
-
-        save()
-        syncLockScreenCounter()
     }
 
-    /// "I'll put it down" — the streak survives. Nothing is recorded, because
-    /// nothing was given up.
+    /// "I'll put it down" — the use session ends now, inside the grace period,
+    /// so the stretch survives and the seconds spent here are not counted.
     func putItDown() {
         showingCheckInGate = false
-    }
+        putDownThisSession = true
 
-    func dismissRestartNotice() {
-        justRestartedFrom = nil
+        usage.endUse(at: Date())
+        save()
+        PhoneFreeUseReminders.cancel()
     }
 
     // MARK: - Reflections
@@ -434,10 +501,15 @@ final class PhoneFreeStore {
 
     // MARK: - The number that matters
 
-    /// How long since the user last used the phone.
+    /// How long since the user last used the phone. Frozen while the phone
+    /// is in use, and zero once that use has run past the grace period.
     func awayInterval(at date: Date = Date()) -> TimeInterval {
-        guard let lastCheckIn else { return 0 }
-        return max(0, date.timeIntervalSince(lastCheckIn))
+        usage.awayInterval(at: date)
+    }
+
+    /// `true` while the phone is being used and the counter is frozen.
+    func isUsingPhone(at date: Date = Date()) -> Bool {
+        !goalActive && usage.isUsing(at: date)
     }
 
     /// Where the goal has got to, for the progress ring.
@@ -702,10 +774,12 @@ final class PhoneFreeStore {
         goalActive = false
         goalStart = nil
         goalEnd = nil
-        lastCheckIn = Date()
+        usage.restart(at: Date())
 
         save()
         PhoneFreeLiveActivityManager.shared.end()
+        PhoneFreeGoalNudges.cancel()
+        PhoneFreeUseReminders.cancel()
     }
 
     /// Forget today only. Useful for people who find a bad start hard to
@@ -718,10 +792,12 @@ final class PhoneFreeStore {
         goalActive = false
         goalStart = nil
         goalEnd = nil
-        lastCheckIn = Date()
+        usage.restart(at: Date())
 
         save()
         PhoneFreeLiveActivityManager.shared.end()
+        PhoneFreeGoalNudges.cancel()
+        PhoneFreeUseReminders.cancel()
         syncLockScreenCounter()
     }
 
@@ -804,10 +880,10 @@ final class PhoneFreeStore {
             windows = Self.defaultWindows()
         }
 
-        if let timestamp = defaults.object(
-            forKey: "phoneFreeLastCheckIn"
-        ) as? Date {
-            lastCheckIn = timestamp
+        usage = PhoneFreeUsage.load()
+
+        if defaults.object(forKey: "phoneFreeGoalNudges") != nil {
+            goalNudgesEnabled = defaults.bool(forKey: "phoneFreeGoalNudges")
         }
 
         goalActive = defaults.bool(forKey: "phoneFreeGoalActive")
@@ -861,10 +937,6 @@ final class PhoneFreeStore {
             defaults.set(data, forKey: "phoneFreeWindows")
         }
 
-        if let data = try? JSONEncoder().encode(windows) {
-            defaults.set(data, forKey: "phoneFreeWindows")
-        }
-
         defaults.set(goalActive, forKey: "phoneFreeGoalActive")
 
         if let goalStart {
@@ -879,9 +951,8 @@ final class PhoneFreeStore {
             defaults.removeObject(forKey: "phoneFreeGoalEnd")
         }
 
-        if let lastCheckIn {
-            defaults.set(lastCheckIn, forKey: "phoneFreeLastCheckIn")
-        }
+        PhoneFreeUsage.save(usage)
+        defaults.set(goalNudgesEnabled, forKey: "phoneFreeGoalNudges")
 
         WidgetCenter.shared.reloadAllTimelines()
     }

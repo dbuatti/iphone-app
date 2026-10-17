@@ -86,6 +86,11 @@ struct ContentView: View {
             tab = .away
         }
         .onReceive(
+            NotificationCenter.default.publisher(for: .phoneFreeUsageChanged)
+        ) { _ in
+            store.reloadUsage()
+        }
+        .onReceive(
             Timer.publish(every: 1, on: .main, in: .common).autoconnect()
         ) { _ in
             store.tick()
@@ -149,6 +154,7 @@ struct ContentView: View {
                 awayFor: store.checkInGateGap,
                 bestToday: store.bestGapToday,
                 checkInsToday: store.pickupsToday,
+                resetAfter: store.resetAfter,
                 onPutItDown: { store.putItDown() },
                 onUseAnyway: { store.confirmPhoneUse() }
             )

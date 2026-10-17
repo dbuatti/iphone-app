@@ -23,6 +23,12 @@ final class PhoneFreeAppDelegate: NSObject, UIApplicationDelegate,
         didReceive response: UNNotificationResponse,
         withCompletionHandler completionHandler: @escaping () -> Void
     ) {
+        if response.actionIdentifier == PhoneFreeUseReminders.putDownActionID {
+            PhoneFreeUseReminders.putDown()
+            completionHandler()
+            return
+        }
+
         let prefix = PhoneFreeWindowScheduler.windowRequestPrefix
         let identifier = response.notification.request.identifier
 

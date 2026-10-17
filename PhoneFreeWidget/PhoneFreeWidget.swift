@@ -9,6 +9,8 @@ struct PhoneFreeEntry: TimelineEntry {
     let goalActive: Bool
     let goalsCompletedToday: Int
     let protectedMinutesToday: Int
+    /// Where the away counter counts up from. `nil` while the phone is in use,
+    /// because then it is not counting.
     let lastCheckIn: Date?
 
     /// The next rung of the away counter's ladder, and the longest *finished*
@@ -16,6 +18,12 @@ struct PhoneFreeEntry: TimelineEntry {
     /// stretching the gap, so the gap needs something to stretch towards.
     let nextTargetSeconds: TimeInterval?
     let bestGapSeconds: TimeInterval
+
+    /// The frozen stretch while the phone is in use inside the grace period.
+    var pausedSeconds: TimeInterval? = nil
+
+    /// The phone is still in use after the grace period: held at zero.
+    var heldAtZero = false
 }
 
 struct PhoneFreeProvider: TimelineProvider {
@@ -43,15 +51,34 @@ struct PhoneFreeProvider: TimelineProvider {
         in context: Context,
         completion: @escaping (Timeline<PhoneFreeEntry>) -> Void
     ) {
-        let entry = loadEntry()
-        let refresh = Date().addingTimeInterval(15 * 60)
+        let now = Date()
+        var entries = [loadEntry(at: now)]
+
+        // While the phone is in use the counter changes state on a clock — at
+        // the reset, and when an unclosed session is given up on — so those
+        // moments get entries of their own instead of waiting for a refresh.
+        let usage = PhoneFreeUsage.load()
+
+        if usage.isUsing(at: now), let usingSince = usage.usingSince {
+            let changes = [
+                usage.resetsAt,
+                usingSince.addingTimeInterval(PhoneFreeUsage.abandonAfter),
+            ]
+
+            for date in changes.compactMap({ $0 }) where date > now {
+                entries.append(loadEntry(at: date))
+            }
+        }
 
         completion(
-            Timeline(entries: [entry], policy: .after(refresh))
+            Timeline(
+                entries: entries,
+                policy: .after(now.addingTimeInterval(15 * 60))
+            )
         )
     }
 
-    private func loadEntry() -> PhoneFreeEntry {
+    private func loadEntry(at now: Date = Date()) -> PhoneFreeEntry {
         let defaults = UserDefaults(suiteName: appGroupID)
 
         let active = defaults?.bool(
@@ -65,9 +92,8 @@ struct PhoneFreeProvider: TimelineProvider {
             forKey: "phoneFreeGoalEnd"
         ) as? Date
 
-        let lastCheckIn = defaults?.object(
-            forKey: "phoneFreeLastCheckIn"
-        ) as? Date
+        let usage = PhoneFreeUsage.load()
+        let using = usage.isUsing(at: now)
 
         var completedCount = 0
         var protectedSeconds: TimeInterval = 0
@@ -112,19 +138,21 @@ struct PhoneFreeProvider: TimelineProvider {
             }
         }
 
-        let gap = lastCheckIn.map {
-            max(0, Date().timeIntervalSince($0))
-        } ?? 0
+        let gap = usage.awayInterval(at: now)
 
         return PhoneFreeEntry(
-            date: .now,
+            date: now,
             goalEnd: end,
             goalActive: active,
             goalsCompletedToday: completedCount,
             protectedMinutesToday: Int(protectedSeconds / 60),
-            lastCheckIn: lastCheckIn,
+            lastCheckIn: usage.countingSince(at: now),
             nextTargetSeconds: PhoneFreeTargets.next(after: gap),
-            bestGapSeconds: bestGapSeconds
+            bestGapSeconds: bestGapSeconds,
+            pausedSeconds: using && !usage.hasReset(at: now)
+                ? usage.frozenInterval
+                : nil,
+            heldAtZero: usage.hasReset(at: now)
         )
     }
 }
@@ -195,9 +223,28 @@ struct PhoneFreeWidgetEntryView: View {
     }
 
     private var accessoryCaption: String {
-        accessoryIsGoal
-            ? "TIME LEFT TO YOUR GOAL"
-            : "SINCE YOU LAST USED YOUR PHONE"
+        if accessoryIsGoal { return "TIME LEFT TO YOUR GOAL" }
+        if entry.pausedSeconds != nil { return "PAUSED — ON YOUR PHONE" }
+        if entry.heldAtZero { return "RESET — PUT IT DOWN" }
+        return "SINCE YOU LAST USED YOUR PHONE"
+    }
+
+    /// The counter while it is not counting: the frozen stretch, or zero.
+    private var stillCounterText: String? {
+        if let paused = entry.pausedSeconds {
+            return Self.clock(paused)
+        }
+        return entry.heldAtZero ? "0:00" : nil
+    }
+
+    private static func clock(_ interval: TimeInterval) -> String {
+        let seconds = max(0, Int(interval))
+        let hours = seconds / 3600
+        let minutes = (seconds % 3600) / 60
+
+        return hours > 0
+            ? String(format: "%d:%02d:%02d", hours, minutes, seconds % 60)
+            : String(format: "%d:%02d", minutes, seconds % 60)
     }
 
     /// "Next target 3h" — the rung the away counter is climbing towards.
@@ -223,7 +270,24 @@ struct PhoneFreeWidgetEntryView: View {
         ZStack {
             AccessoryWidgetBackground()
 
-            if let date = accessoryDate {
+            if let still = stillCounterText, !accessoryIsGoal {
+                VStack(spacing: 0) {
+                    Image(systemName: "pause.fill")
+                        .font(.system(size: 10, weight: .semibold))
+
+                    Text(still)
+                        .font(
+                            .system(
+                                size: 13,
+                                weight: .semibold,
+                                design: .rounded
+                            )
+                        )
+                        .monospacedDigit()
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.45)
+                }
+            } else if let date = accessoryDate {
                 VStack(spacing: 0) {
                     Image(systemName: accessorySymbol)
                         .font(.system(size: 10, weight: .semibold))
@@ -256,7 +320,19 @@ struct PhoneFreeWidgetEntryView: View {
                 .lineLimit(1)
                 .minimumScaleFactor(0.7)
 
-            if let date = accessoryDate {
+            if let still = stillCounterText, !accessoryIsGoal {
+                Text(still)
+                    .font(
+                        .system(
+                            size: 22,
+                            weight: .semibold,
+                            design: .rounded
+                        )
+                    )
+                    .monospacedDigit()
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.6)
+            } else if let date = accessoryDate {
                 Text(date, style: .timer)
                     .font(
                         .system(
@@ -290,7 +366,9 @@ struct PhoneFreeWidgetEntryView: View {
 
     private var accessoryInline: some View {
         Group {
-            if let date = accessoryDate {
+            if let still = stillCounterText, !accessoryIsGoal {
+                Label("\(still) · paused", systemImage: "pause.fill")
+            } else if let date = accessoryDate {
                 Label {
                     Text(date, style: .timer)
                 } icon: {
@@ -334,6 +412,36 @@ struct PhoneFreeWidgetEntryView: View {
                         .font(.system(size: 10))
                         .foregroundStyle(.white.opacity(0.65))
                         .lineLimit(1)
+                }
+            } else if let still = stillCounterText {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(accessoryCaption)
+                        .font(.system(size: 9, weight: .bold))
+                        .tracking(0.5)
+                        .foregroundStyle(.white.opacity(0.7))
+
+                    Text(still)
+                        .font(
+                            .system(
+                                size: 34,
+                                weight: .semibold,
+                                design: .rounded
+                            )
+                        )
+                        .monospacedDigit()
+                        .foregroundStyle(mint.opacity(0.6))
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.55)
+
+                    Text(
+                        entry.heldAtZero
+                            ? "Starts again when you put it down."
+                            : "Put it down and this carries on."
+                    )
+                    .font(.system(size: 10, weight: .medium))
+                    .foregroundStyle(.white.opacity(0.7))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.75)
                 }
             } else if let lastCheckIn = entry.lastCheckIn {
                 VStack(alignment: .leading, spacing: 4) {

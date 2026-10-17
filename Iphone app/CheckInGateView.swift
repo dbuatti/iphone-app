@@ -6,7 +6,8 @@
 //  meaningful stretch away, when no phone-free goal is running.
 //
 //  It confronts the user with how long they lasted, and makes the cost of
-//  continuing explicit: the timer restarts to zero.
+//  continuing explicit: stay on the phone past the grace period and the timer
+//  restarts at zero.
 //
 
 import SwiftUI
@@ -15,6 +16,7 @@ struct CheckInGateView: View {
     let awayFor: TimeInterval
     let bestToday: TimeInterval
     let checkInsToday: Int
+    let resetAfter: TimeInterval
 
     let onPutItDown: () -> Void
     let onUseAnyway: () -> Void
@@ -74,9 +76,15 @@ struct CheckInGateView: View {
                     .fixedSize(horizontal: false, vertical: true)
                     .padding(.top, 26)
 
-                Text("Your timer will restart to 0.")
+                Text(
+                    "Still on it in "
+                    + PhoneFreeUsage.shortSeconds(resetAfter)
+                    + " and your timer goes back to 0."
+                )
                     .font(.system(size: 14))
                     .foregroundStyle(muted)
+                    .multilineTextAlignment(.center)
+                    .fixedSize(horizontal: false, vertical: true)
                     .padding(.top, 8)
 
                 if checkInsToday > 0 {
@@ -157,6 +165,7 @@ struct CheckInGateView: View {
         awayFor: 4 * 3600 + 12 * 60 + 33,
         bestToday: 5 * 3600 + 2 * 60,
         checkInsToday: 3,
+        resetAfter: 60,
         onPutItDown: {},
         onUseAnyway: {}
     )

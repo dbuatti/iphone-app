@@ -24,8 +24,8 @@ struct PhoneFreeAwayView: View {
             VStack(spacing: 26) {
                 header
 
-                if let restartedFrom = store.justRestartedFrom {
-                    restartedNotice(restartedFrom)
+                if store.isUsingPhone() {
+                    usageBanner
                 }
 
                 if store.goalActive {
@@ -79,14 +79,18 @@ struct PhoneFreeAwayView: View {
 
     private var awayHero: some View {
         VStack(spacing: 14) {
-            Text("SINCE YOU LAST USED YOUR PHONE")
-                .font(.system(size: 11, weight: .bold))
-                .tracking(1.6)
-                .foregroundStyle(PhoneFreeTheme.muted)
-                .multilineTextAlignment(.center)
-
             TimelineView(.periodic(from: .now, by: 1)) { context in
                 VStack(spacing: 16) {
+                    Text(
+                        store.isUsingPhone(at: context.date)
+                            ? "PAUSED — YOU'RE ON YOUR PHONE"
+                            : "SINCE YOU LAST USED YOUR PHONE"
+                    )
+                    .font(.system(size: 11, weight: .bold))
+                    .tracking(1.6)
+                    .foregroundStyle(PhoneFreeTheme.muted)
+                    .multilineTextAlignment(.center)
+
                     Text(PhoneFreeFormat.clock(store.awayInterval(at: context.date)))
                         .font(
                             .system(
@@ -271,7 +275,10 @@ struct PhoneFreeAwayView: View {
         }
     }
 
-    private func progressBar(_ progress: Double) -> some View {
+    private func progressBar(
+        _ progress: Double,
+        label: String = "Progress towards your next target"
+    ) -> some View {
         GeometryReader { geometry in
             ZStack(alignment: .leading) {
                 Capsule()
@@ -284,7 +291,7 @@ struct PhoneFreeAwayView: View {
         }
         .frame(height: 6)
         .accessibilityElement()
-        .accessibilityLabel("Progress towards your next target")
+        .accessibilityLabel(label)
         .accessibilityValue("\(Int(progress * 100)) percent")
     }
 
@@ -596,43 +603,89 @@ struct PhoneFreeAwayView: View {
         }
     }
 
-    // MARK: - Restart notice
+    // MARK: - Using the phone
+    //
+    // While the app is open the phone is in use, so the counter is frozen and
+    // a grace period runs. This says so plainly, counts it down, and offers
+    // the one thing that saves the streak.
 
-    private func restartedNotice(_ awayFor: TimeInterval) -> some View {
-        PhoneFreeCard {
-            HStack(alignment: .top, spacing: 12) {
-                Image(systemName: "arrow.counterclockwise")
-                    .font(.system(size: 15))
-                    .foregroundStyle(PhoneFreeTheme.accent)
+    private var usageBanner: some View {
+        TimelineView(.periodic(from: .now, by: 1)) { context in
+            let usage = store.usage
+            let reset = usage.hasReset(at: context.date)
+            let left = usage.resetsAt.map {
+                max(0, $0.timeIntervalSince(context.date))
+            } ?? 0
 
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("Your timer started again")
-                        .font(.system(size: 14, weight: .medium))
-                        .foregroundStyle(.white)
+            PhoneFreeCard {
+                VStack(alignment: .leading, spacing: 12) {
+                    HStack(alignment: .top, spacing: 12) {
+                        Image(
+                            systemName: reset
+                                ? "arrow.counterclockwise"
+                                : "hourglass.bottomhalf.filled"
+                        )
+                        .font(.system(size: 15))
+                        .foregroundStyle(PhoneFreeTheme.accent)
 
-                    Text(
-                        "You were away for "
-                        + PhoneFreeFormat.clock(awayFor)
-                        + ". That still happened — and a new stretch starts "
-                        + "now."
-                    )
-                    .font(.system(size: 12))
-                    .foregroundStyle(PhoneFreeTheme.muted)
-                    .fixedSize(horizontal: false, vertical: true)
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(
+                                reset
+                                    ? "Your timer reset"
+                                    : "Timer resets in "
+                                        + PhoneFreeUsage.shortSeconds(left)
+                            )
+                            .font(.system(size: 15, weight: .semibold))
+                            .monospacedDigit()
+                            .foregroundStyle(.white)
+
+                            Text(
+                                reset
+                                    ? "It starts counting again the moment you "
+                                        + "put your phone down."
+                                    : "You're on your phone, so the counter is "
+                                        + "paused. Put it down now and "
+                                        + (usage.frozenInterval >= 60
+                                            ? "your "
+                                                + PhoneFreeFormat.clock(
+                                                    usage.frozenInterval
+                                                )
+                                                + " carries on."
+                                            : "it carries on.")
+                            )
+                            .font(.system(size: 12))
+                            .foregroundStyle(PhoneFreeTheme.muted)
+                            .fixedSize(horizontal: false, vertical: true)
+                        }
+
+                        Spacer(minLength: 0)
+                    }
+
+                    if !reset {
+                        progressBar(
+                            left / max(usage.resetAfter, 1),
+                            label: "Time left before your timer resets"
+                        )
+
+                        Button {
+                            store.putItDown()
+                        } label: {
+                            Text("I'll put it down")
+                                .font(.system(size: 15, weight: .semibold))
+                                .foregroundStyle(PhoneFreeTheme.background)
+                                .frame(maxWidth: .infinity)
+                                .frame(height: 46)
+                                .background(PhoneFreeTheme.accent)
+                                .clipShape(
+                                    RoundedRectangle(
+                                        cornerRadius: 14,
+                                        style: .continuous
+                                    )
+                                )
+                        }
+                        .buttonStyle(.plain)
+                    }
                 }
-
-                Spacer(minLength: 0)
-
-                Button {
-                    store.dismissRestartNotice()
-                } label: {
-                    Image(systemName: "xmark")
-                        .font(.system(size: 12, weight: .semibold))
-                        .foregroundStyle(PhoneFreeTheme.muted)
-                        .padding(6)
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel("Dismiss")
             }
         }
     }

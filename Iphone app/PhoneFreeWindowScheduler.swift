@@ -74,15 +74,29 @@ final class PhoneFreeWindowScheduler {
             options: []
         )
 
-        center.setNotificationCategories([category])
+        // One call registers every category, so the use reminders' "I've put
+        // it down" button is set up here too.
+        center.setNotificationCategories([
+            category,
+            PhoneFreeUseReminders.category,
+        ])
     }
 
     /// Rebuilds every reminder from the current list. Safe to call often.
+    ///
+    /// Only window reminders are removed — goal nudges and use reminders are
+    /// pending alongside them and must survive a window being edited.
     func reschedule(_ windows: [PhoneFreeWindow]) {
-        center.removeAllPendingNotificationRequests()
+        Task {
+            let stale = await center.pendingNotificationRequests()
+                .map(\.identifier)
+                .filter { $0.hasPrefix(Self.windowRequestPrefix) }
 
-        for window in windows where window.enabled {
-            schedule(window)
+            center.removePendingNotificationRequests(withIdentifiers: stale)
+
+            for window in windows where window.enabled {
+                schedule(window)
+            }
         }
     }
 

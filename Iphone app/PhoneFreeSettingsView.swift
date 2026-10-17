@@ -7,6 +7,7 @@
 //
 
 import SwiftUI
+import UserNotifications
 
 struct PhoneFreeSettingsView: View {
     @Environment(PhoneFreeStore.self) private var store
@@ -14,11 +15,16 @@ struct PhoneFreeSettingsView: View {
     @State private var confirmingClearAll = false
     @State private var confirmingClearToday = false
     @State private var showingWindows = false
+    @State private var notificationStatus: UNAuthorizationStatus = .notDetermined
+
+    @Environment(\.openURL) private var openURL
 
     var body: some View {
         ScrollView(showsIndicators: false) {
             VStack(alignment: .leading, spacing: 24) {
                 header
+
+                interruptSection
 
                 lockScreenSection
 
@@ -70,6 +76,162 @@ struct PhoneFreeSettingsView: View {
         .sheet(isPresented: $showingWindows) {
             PhoneFreeWindowSettingsView()
         }
+        .task {
+            notificationStatus = await PhoneFreeWindowScheduler.shared
+                .authorizationStatus()
+        }
+    }
+
+    // MARK: - Interruptions
+
+    private var interruptSection: some View {
+        @Bindable var store = store
+
+        return VStack(alignment: .leading, spacing: 12) {
+            PhoneFreeSectionLabel("WHEN YOU PICK UP YOUR PHONE")
+
+            PhoneFreeCard {
+                VStack(alignment: .leading, spacing: 14) {
+                    Text(
+                        "Using your phone pauses the counter. Still on it after "
+                        + "the time below, and it goes back to 0."
+                    )
+                    .font(.system(size: 13))
+                    .foregroundStyle(PhoneFreeTheme.muted)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                    Picker("Reset after", selection: $store.resetAfter) {
+                        ForEach(PhoneFreeUsage.resetAfterOptions, id: \.self) {
+                            Text(PhoneFreeUsage.shortSeconds($0)).tag($0)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+
+                    Toggle(isOn: $store.goalNudgesEnabled) {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Reminders during a goal")
+                                .font(.system(size: 15, weight: .medium))
+                                .foregroundStyle(.white)
+
+                            Text("A quiet Lock Screen nudge every few minutes.")
+                                .font(.system(size: 12))
+                                .foregroundStyle(PhoneFreeTheme.muted)
+                        }
+                    }
+                    .tint(PhoneFreeTheme.accent)
+
+                    if notificationStatus != .authorized {
+                        notificationsButton
+                    }
+                }
+            }
+
+            PhoneFreeCard {
+                VStack(alignment: .leading, spacing: 12) {
+                    Text("Interrupt other apps")
+                        .font(.system(size: 15, weight: .semibold))
+                        .foregroundStyle(.white)
+
+                    Text(
+                        "iOS doesn't tell apps when you unlock your phone. "
+                        + "Shortcuts can tell PhoneFree when the apps that pull "
+                        + "at you open and close, and PhoneFree then counts "
+                        + "down with a reminder every 15 seconds."
+                    )
+                    .font(.system(size: 12))
+                    .foregroundStyle(PhoneFreeTheme.muted)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                    VStack(alignment: .leading, spacing: 8) {
+                        setupStep(1, "In Shortcuts, tap Automation, then New "
+                            + "Automation, then App.")
+                        setupStep(2, "Choose your apps. Tick Is Opened only, "
+                            + "and choose Run Immediately.")
+                        setupStep(3, "Add the PhoneFree action “I'm Using My "
+                            + "Phone”.")
+                        setupStep(4, "Make a second one for the same apps with "
+                            + "Is Closed and “I Put My Phone Down”.")
+                    }
+
+                    Button {
+                        if let url = URL(string: "shortcuts://") {
+                            openURL(url)
+                        }
+                    } label: {
+                        HStack(spacing: 8) {
+                            Image(systemName: "square.2.layers.3d")
+
+                            Text("Open Shortcuts")
+                                .font(.system(size: 15, weight: .medium))
+                        }
+                        .foregroundStyle(.white)
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 48)
+                        .background(Color.white.opacity(0.06))
+                        .clipShape(
+                            RoundedRectangle(
+                                cornerRadius: 14,
+                                style: .continuous
+                            )
+                        )
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+        }
+    }
+
+    private func setupStep(_ number: Int, _ text: String) -> some View {
+        HStack(alignment: .top, spacing: 10) {
+            Text("\(number)")
+                .font(.system(size: 12, weight: .bold, design: .rounded))
+                .foregroundStyle(PhoneFreeTheme.background)
+                .frame(width: 20, height: 20)
+                .background(PhoneFreeTheme.accent, in: Circle())
+
+            Text(text)
+                .font(.system(size: 13))
+                .foregroundStyle(.white)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    /// The reminders are the interruption, so without permission nothing
+    /// happens. Says so, and fixes it in one tap.
+    private var notificationsButton: some View {
+        Button {
+            if notificationStatus == .denied {
+                if let url = URL(string: UIApplication.openNotificationSettingsURLString) {
+                    openURL(url)
+                }
+            } else {
+                Task {
+                    _ = await PhoneFreeWindowScheduler.shared
+                        .requestAuthorization()
+                    notificationStatus = await PhoneFreeWindowScheduler.shared
+                        .authorizationStatus()
+                }
+            }
+        } label: {
+            HStack(spacing: 8) {
+                Image(systemName: "bell.badge")
+
+                Text(
+                    notificationStatus == .denied
+                        ? "Turn on notifications in Settings"
+                        : "Allow reminders"
+                )
+                .font(.system(size: 15, weight: .medium))
+            }
+            .foregroundStyle(PhoneFreeTheme.background)
+            .frame(maxWidth: .infinity)
+            .frame(height: 48)
+            .background(PhoneFreeTheme.accent)
+            .clipShape(
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+            )
+        }
+        .buttonStyle(.plain)
     }
 
     // MARK: - Header
@@ -259,8 +421,9 @@ struct PhoneFreeSettingsView: View {
                         .fixedSize(horizontal: false, vertical: true)
 
                         Text(
-                            "For now, the friction is the pause and the "
-                            + "counter — and putting the phone in another room."
+                            "For now, the Shortcuts interruption above is the "
+                            + "closest thing — and putting the phone in "
+                            + "another room."
                         )
                         .font(.system(size: 12))
                         .foregroundStyle(PhoneFreeTheme.muted)
