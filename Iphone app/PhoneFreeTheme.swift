@@ -36,6 +36,95 @@ enum PhoneFreeTheme {
     static let screenPadding: CGFloat = 20
 }
 
+// MARK: - Text size
+//
+// Text follows the iPhone's text-size setting. Most text uses the built-in
+// text styles (.caption, .subheadline…). Where a screen needs a size that has
+// no matching style — the big counters, small all-caps labels — `scaledFont`
+// keeps that exact size at the default setting and scales it from there.
+
+private struct PhoneFreeScaledFont: ViewModifier {
+    @ScaledMetric private var size: CGFloat
+    let weight: Font.Weight
+    let design: Font.Design
+
+    init(
+        size: CGFloat,
+        weight: Font.Weight,
+        design: Font.Design,
+        relativeTo style: Font.TextStyle
+    ) {
+        _size = ScaledMetric(wrappedValue: size, relativeTo: style)
+        self.weight = weight
+        self.design = design
+    }
+
+    func body(content: Content) -> some View {
+        content.font(.system(size: size, weight: weight, design: design))
+    }
+}
+
+extension View {
+    /// A system font at `size` points at the default text size, scaled with
+    /// the user's text-size setting like `style` is.
+    func scaledFont(
+        _ size: CGFloat,
+        weight: Font.Weight = .regular,
+        design: Font.Design = .default,
+        relativeTo style: Font.TextStyle = .body
+    ) -> some View {
+        modifier(
+            PhoneFreeScaledFont(
+                size: size,
+                weight: weight,
+                design: design,
+                relativeTo: style
+            )
+        )
+    }
+}
+
+/// Lays its children out side by side, or one above the other when the user
+/// has picked one of the larger accessibility text sizes and side by side
+/// would squash them.
+struct PhoneFreeAdaptiveStack<Content: View>: View {
+    var spacing: CGFloat = 12
+    var horizontalAlignment: HorizontalAlignment = .leading
+    var verticalAlignment: VerticalAlignment = .center
+    @ViewBuilder var content: Content
+
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+
+    var body: some View {
+        let layout = dynamicTypeSize.isAccessibilitySize
+            ? AnyLayout(
+                VStackLayout(alignment: horizontalAlignment, spacing: spacing)
+            )
+            : AnyLayout(
+                HStackLayout(alignment: verticalAlignment, spacing: spacing)
+            )
+
+        layout { content }
+    }
+}
+
+/// A full-screen column that keeps its Spacers at the default text size but
+/// scrolls instead of clipping when large text makes it taller than the
+/// screen.
+struct PhoneFreeFillingScroll<Content: View>: View {
+    @ViewBuilder var content: Content
+
+    var body: some View {
+        GeometryReader { proxy in
+            ScrollView(showsIndicators: false) {
+                content
+                    .frame(minHeight: proxy.size.height)
+            }
+            .scrollBounceBehavior(.basedOnSize)
+        }
+    }
+}
+
 // MARK: - Reusable pieces
 
 /// A raised card used all over the app. One shape, one padding — so the eye
@@ -76,7 +165,7 @@ struct PhoneFreeSectionLabel: View {
 
     var body: some View {
         Text(text)
-            .font(.system(size: 11, weight: .bold))
+            .font(.caption2.weight(.bold))
             .tracking(1.8)
             .foregroundStyle(PhoneFreeTheme.muted)
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -99,11 +188,14 @@ struct PhoneFreePrimaryButton: View {
                 }
 
                 Text(title)
-                    .font(.system(size: 17, weight: .semibold))
+                    .font(.headline)
             }
+            .multilineTextAlignment(.center)
+            .padding(.horizontal, 12)
             .foregroundStyle(PhoneFreeTheme.background)
             .frame(maxWidth: .infinity)
-            .frame(height: 58)
+            .padding(.vertical, 10)
+            .frame(minHeight: 58)
             .background(PhoneFreeTheme.accent)
             .clipShape(
                 RoundedRectangle(cornerRadius: 17, style: .continuous)
@@ -128,11 +220,14 @@ struct PhoneFreeSecondaryButton: View {
                 }
 
                 Text(title)
-                    .font(.system(size: 15, weight: .medium))
+                    .font(.subheadline.weight(.medium))
             }
+            .multilineTextAlignment(.center)
+            .padding(.horizontal, 12)
             .foregroundStyle(tint)
             .frame(maxWidth: .infinity)
-            .frame(height: 50)
+            .padding(.vertical, 10)
+            .frame(minHeight: 50)
             .background(Color.white.opacity(0.04))
             .clipShape(
                 RoundedRectangle(cornerRadius: 15, style: .continuous)

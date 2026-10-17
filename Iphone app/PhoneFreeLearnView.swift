@@ -327,12 +327,12 @@ struct PhoneFreeLearnView: View {
     private var header: some View {
         VStack(alignment: .leading, spacing: 4) {
             Text("LEARN")
-                .font(.system(size: 12, weight: .bold))
+                .font(.caption.weight(.bold))
                 .tracking(3)
                 .foregroundStyle(PhoneFreeTheme.accent)
 
             Text("What's going on, and what to do")
-                .font(.system(size: 26, weight: .semibold))
+                .scaledFont(26, weight: .semibold, relativeTo: .title)
                 .foregroundStyle(.white)
         }
     }
@@ -345,7 +345,7 @@ struct PhoneFreeLearnView: View {
 
             Text("Tap one to drop it into your plan. You'll find it on the "
                  + "Away tab.")
-                .font(.system(size: 13))
+                .font(.footnote)
                 .foregroundStyle(PhoneFreeTheme.muted)
                 .fixedSize(horizontal: false, vertical: true)
 
@@ -361,7 +361,7 @@ struct PhoneFreeLearnView: View {
                         .foregroundStyle(PhoneFreeTheme.accent)
 
                     Text("Added \(addedActivity) to your plan.")
-                        .font(.system(size: 13))
+                        .font(.footnote)
                         .foregroundStyle(.white)
                 }
                 .transition(.opacity)
@@ -373,7 +373,8 @@ struct PhoneFreeLearnView: View {
         PhoneFreeCard {
             HStack(spacing: 14) {
                 Image(systemName: activity.symbol)
-                    .font(.system(size: 15))
+                    .font(.subheadline)
+                    .dynamicTypeSize(...DynamicTypeSize.xxxLarge)
                     .foregroundStyle(PhoneFreeTheme.background)
                     .frame(width: 38, height: 38)
                     .background(PhoneFreeTheme.accent)
@@ -381,11 +382,11 @@ struct PhoneFreeLearnView: View {
 
                 VStack(alignment: .leading, spacing: 3) {
                     Text(activity.name)
-                        .font(.system(size: 15, weight: .medium))
+                        .font(.subheadline.weight(.medium))
                         .foregroundStyle(.white)
 
                     Text(activity.tagline)
-                        .font(.system(size: 12))
+                        .font(.caption)
                         .foregroundStyle(PhoneFreeTheme.muted)
                         .multilineTextAlignment(.leading)
                         .fixedSize(horizontal: false, vertical: true)
@@ -407,7 +408,8 @@ struct PhoneFreeLearnView: View {
                     }
                 } label: {
                     Image(systemName: "plus")
-                        .font(.system(size: 14, weight: .bold))
+                        .scaledFont(14, weight: .bold, relativeTo: .subheadline)
+                        .dynamicTypeSize(...DynamicTypeSize.xxxLarge)
                         .foregroundStyle(PhoneFreeTheme.accent)
                         .frame(width: 36, height: 36)
                         .background(Color.white.opacity(0.06))
@@ -444,18 +446,18 @@ struct PhoneFreeLearnView: View {
         PhoneFreeCard {
             HStack(spacing: 14) {
                 Image(systemName: topic.symbol)
-                    .font(.system(size: 16))
+                    .font(.callout)
                     .foregroundStyle(PhoneFreeTheme.accent)
                     .frame(width: 26)
 
                 VStack(alignment: .leading, spacing: 4) {
                     Text(topic.title)
-                        .font(.system(size: 15, weight: .medium))
+                        .font(.subheadline.weight(.medium))
                         .foregroundStyle(.white)
                         .multilineTextAlignment(.leading)
 
                     Text(topic.subtitle)
-                        .font(.system(size: 12))
+                        .font(.caption)
                         .foregroundStyle(PhoneFreeTheme.muted)
                         .multilineTextAlignment(.leading)
                         .fixedSize(horizontal: false, vertical: true)
@@ -464,7 +466,7 @@ struct PhoneFreeLearnView: View {
                 Spacer(minLength: 0)
 
                 Image(systemName: "chevron.right")
-                    .font(.system(size: 13, weight: .semibold))
+                    .font(.footnote.weight(.semibold))
                     .foregroundStyle(PhoneFreeTheme.muted)
             }
         }
@@ -472,7 +474,7 @@ struct PhoneFreeLearnView: View {
 
     private var footerNote: some View {
         Text("General information, not medical advice.")
-            .font(.system(size: 12))
+            .font(.caption)
             .foregroundStyle(PhoneFreeTheme.muted.opacity(0.8))
             .frame(maxWidth: .infinity, alignment: .center)
             .padding(.top, 4)
@@ -489,22 +491,22 @@ struct PhoneFreeLearnDetail: View {
             VStack(alignment: .leading, spacing: 20) {
                 HStack(spacing: 12) {
                     Image(systemName: topic.symbol)
-                        .font(.system(size: 20))
+                        .font(.title3)
                         .foregroundStyle(PhoneFreeTheme.accent)
 
                     Text(topic.section.uppercased())
-                        .font(.system(size: 11, weight: .bold))
+                        .font(.caption2.weight(.bold))
                         .tracking(1.8)
                         .foregroundStyle(PhoneFreeTheme.muted)
                 }
 
                 Text(topic.title)
-                    .font(.system(size: 28, weight: .semibold))
+                    .font(.title.weight(.semibold))
                     .foregroundStyle(.white)
                     .fixedSize(horizontal: false, vertical: true)
 
                 Text(topic.subtitle)
-                    .font(.system(size: 15))
+                    .font(.subheadline)
                     .foregroundStyle(PhoneFreeTheme.accent)
                     .fixedSize(horizontal: false, vertical: true)
 
@@ -531,14 +533,14 @@ struct PhoneFreeLearnDetail: View {
         switch block {
         case let .paragraph(text):
             Text(text)
-                .font(.system(size: 15))
+                .font(.subheadline)
                 .foregroundStyle(.white.opacity(0.85))
                 .fixedSize(horizontal: false, vertical: true)
                 .lineSpacing(3)
 
         case let .heading(text):
             Text(text)
-                .font(.system(size: 13, weight: .bold))
+                .font(.footnote.weight(.bold))
                 .tracking(0.8)
                 .foregroundStyle(PhoneFreeTheme.accent)
                 .padding(.top, 4)
@@ -553,7 +555,7 @@ struct PhoneFreeLearnDetail: View {
                             .padding(.top, 7)
 
                         Text(item)
-                            .font(.system(size: 15))
+                            .font(.subheadline)
                             .foregroundStyle(.white.opacity(0.85))
                             .fixedSize(horizontal: false, vertical: true)
                     }
@@ -567,7 +569,7 @@ struct PhoneFreeLearnDetail: View {
                         .foregroundStyle(PhoneFreeTheme.accent)
 
                     Text(text)
-                        .font(.system(size: 13))
+                        .font(.footnote)
                         .foregroundStyle(PhoneFreeTheme.muted)
                         .fixedSize(horizontal: false, vertical: true)
                 }

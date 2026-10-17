@@ -35,6 +35,7 @@ struct PhoneFreeOnboardingView: View {
 
     @Environment(\.openURL) private var openURL
     @Environment(\.scenePhase) private var scenePhase
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     var body: some View {
         ZStack {
@@ -81,7 +82,13 @@ struct PhoneFreeOnboardingView: View {
     /// "Step 2 of 5" in words as well as dots, so the length is never a
     /// mystery.
     private var progress: some View {
-        HStack(spacing: 10) {
+        // At the largest text sizes the label gets its own line, so the bar
+        // is never squeezed down to slivers.
+        let layout = dynamicTypeSize.isAccessibilitySize
+            ? AnyLayout(VStackLayout(alignment: .leading, spacing: 8))
+            : AnyLayout(HStackLayout(spacing: 10))
+
+        return layout {
             HStack(spacing: 6) {
                 ForEach(Step.allCases, id: \.self) { item in
                     Capsule()
@@ -387,6 +394,9 @@ struct PhoneFreeShortcutsSetupSteps: View {
 
     @Environment(\.openURL) private var openURL
 
+    /// The number badges grow with the text beside them.
+    @ScaledMetric(relativeTo: .caption) private var badgeSize: CGFloat = 22
+
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             step(1, "In Shortcuts, tap Automation, then New Automation, then "
@@ -416,7 +426,7 @@ struct PhoneFreeShortcutsSetupSteps: View {
             Text("\(number)")
                 .font(.caption.weight(.bold))
                 .foregroundStyle(PhoneFreeTheme.background)
-                .frame(width: 22, height: 22)
+                .frame(width: badgeSize, height: badgeSize)
                 .background(PhoneFreeTheme.accent, in: Circle())
 
             Text(text)

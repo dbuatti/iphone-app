@@ -31,6 +31,7 @@ struct ActivityPlanBuilder: View {
     var onSave: () -> Void = {}
 
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     private var planTotal: Int {
         plan.reduce(0) { $0 + $1.minutes }
@@ -99,7 +100,7 @@ struct ActivityPlanBuilder: View {
                 + "length of your phone-free goal, and they'll appear on your "
                 + "Lock Screen while you're away."
             )
-            .font(.system(size: 13))
+            .font(.footnote)
             .foregroundStyle(gateMuted)
             .fixedSize(horizontal: false, vertical: true)
         }
@@ -113,7 +114,7 @@ struct ActivityPlanBuilder: View {
                 sectionTitle("YOUR PLAN")
 
                 Text("Tap a number to change how long each one lasts.")
-                    .font(.system(size: 12))
+                    .font(.caption)
                     .foregroundStyle(gateMuted)
             }
 
@@ -123,16 +124,16 @@ struct ActivityPlanBuilder: View {
                 }
             }
 
-            HStack {
+            PhoneFreeAdaptiveStack(spacing: 4) {
                 Text("TOTAL PHONE-FREE TIME")
-                    .font(.system(size: 10, weight: .bold))
+                    .scaledFont(10, weight: .bold, relativeTo: .caption2)
                     .tracking(1.4)
                     .foregroundStyle(gateMuted)
 
                 Spacer()
 
                 Text("\(planTotal) min")
-                    .font(.system(size: 15, weight: .semibold))
+                    .font(.subheadline.weight(.semibold))
                     .foregroundStyle(gateAccent)
             }
             .padding(.top, 2)
@@ -146,14 +147,15 @@ struct ActivityPlanBuilder: View {
         VStack(alignment: .leading, spacing: 14) {
             HStack(spacing: 12) {
                 Image(systemName: activity.symbol)
-                    .font(.system(size: 15))
+                    .font(.subheadline)
+                    .dynamicTypeSize(...DynamicTypeSize.xxxLarge)
                     .foregroundStyle(gateBackground)
                     .frame(width: 34, height: 34)
                     .background(gateAccent)
                     .clipShape(Circle())
 
                 Text(activity.name)
-                    .font(.system(size: 16, weight: .medium))
+                    .font(.callout.weight(.medium))
                     .foregroundStyle(.white)
 
                 Spacer()
@@ -164,7 +166,7 @@ struct ActivityPlanBuilder: View {
                 } label: {
                     Image(systemName: "xmark.circle.fill")
                         .foregroundStyle(gateMuted)
-                        .font(.system(size: 18))
+                        .scaledFont(18, relativeTo: .title3)
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel("Remove \(activity.name)")
@@ -172,11 +174,21 @@ struct ActivityPlanBuilder: View {
 
             VStack(alignment: .leading, spacing: 8) {
                 Text("HOW LONG?")
-                    .font(.system(size: 10, weight: .bold))
+                    .scaledFont(10, weight: .bold, relativeTo: .caption2)
                     .tracking(1.2)
                     .foregroundStyle(gateMuted)
 
-                HStack(spacing: 8) {
+                // One row normally; two columns at the larger accessibility
+                // text sizes so "45 min" never gets squeezed.
+                LazyVGrid(
+                    columns: Array(
+                        repeating: GridItem(.flexible(), spacing: 8),
+                        count: dynamicTypeSize.isAccessibilitySize
+                            ? 2
+                            : minuteOptions(for: planned).count
+                    ),
+                    spacing: 8
+                ) {
                     ForEach(minuteOptions(for: planned), id: \.self) { minutes in
                         let selected = planned.minutes == minutes
 
@@ -184,12 +196,13 @@ struct ActivityPlanBuilder: View {
                             setMinutes(minutes, for: planned.id)
                         } label: {
                             Text("\(minutes) min")
-                                .font(.system(size: 14, weight: .semibold))
+                                .scaledFont(14, weight: .semibold, relativeTo: .subheadline)
                                 .foregroundStyle(
                                     selected ? gateBackground : .white
                                 )
                                 .frame(maxWidth: .infinity)
-                                .frame(height: 42)
+                                .padding(.vertical, 10)
+                                .frame(minHeight: 42)
                                 .background(
                                     selected ? gateAccent : .white.opacity(0.06)
                                 )
@@ -247,7 +260,7 @@ struct ActivityPlanBuilder: View {
                     ? "Based on what you've told us about your time."
                     : "A place to start."
             )
-            .font(.system(size: 12))
+            .font(.caption)
             .foregroundStyle(gateMuted)
 
             ForEach(remainingSuggestions) { activity in
@@ -269,19 +282,19 @@ struct ActivityPlanBuilder: View {
     }
 
     private func activityRow(_ activity: PhoneFreeActivity) -> some View {
-        HStack(spacing: 12) {
+        PhoneFreeAdaptiveStack(spacing: 12) {
             Image(systemName: activity.symbol)
-                .font(.system(size: 15))
+                .font(.subheadline)
                 .foregroundStyle(gateAccent)
                 .frame(width: 26)
 
             VStack(alignment: .leading, spacing: 3) {
                 Text(activity.name)
-                    .font(.system(size: 15, weight: .medium))
+                    .font(.subheadline.weight(.medium))
                     .foregroundStyle(.white)
 
                 Text(activity.tagline)
-                    .font(.system(size: 12))
+                    .font(.caption)
                     .foregroundStyle(gateMuted)
                     .multilineTextAlignment(.leading)
                     .fixedSize(horizontal: false, vertical: true)
@@ -303,10 +316,11 @@ struct ActivityPlanBuilder: View {
 
                     Text("\(activity.defaultMinutes) min")
                 }
-                .font(.system(size: 13, weight: .semibold))
+                .font(.footnote.weight(.semibold))
                 .foregroundStyle(gateBackground)
                 .padding(.horizontal, 12)
-                .frame(height: 36)
+                .padding(.vertical, 8)
+                .frame(minHeight: 36)
                 .background(gateAccent)
                 .clipShape(
                     RoundedRectangle(cornerRadius: 10, style: .continuous)
@@ -324,7 +338,7 @@ struct ActivityPlanBuilder: View {
 
     private func sectionTitle(_ text: String) -> some View {
         Text(text)
-            .font(.system(size: 11, weight: .bold))
+            .font(.caption2.weight(.bold))
             .tracking(1.8)
             .foregroundStyle(gateMuted)
     }
@@ -356,13 +370,13 @@ struct ReflectionSheet: View {
                 VStack(alignment: .leading, spacing: 24) {
                     VStack(alignment: .leading, spacing: 8) {
                         Text("How did that go?")
-                            .font(.system(size: 22, weight: .semibold))
+                            .font(.title2.weight(.semibold))
                             .foregroundStyle(.white)
 
                         Text(
                             "A few taps help the app suggest better things next time."
                         )
-                        .font(.system(size: 13))
+                        .font(.footnote)
                         .foregroundStyle(gateMuted)
                         .fixedSize(horizontal: false, vertical: true)
                     }
@@ -407,11 +421,11 @@ struct ReflectionSheet: View {
         VStack(alignment: .leading, spacing: 18) {
             HStack(spacing: 10) {
                 Image(systemName: activity.symbol)
-                    .font(.system(size: 16))
+                    .font(.callout)
                     .foregroundStyle(gateAccent)
 
                 Text("\(activity.name) · \(planned.minutes) min")
-                    .font(.system(size: 15, weight: .semibold))
+                    .font(.subheadline.weight(.semibold))
                     .foregroundStyle(.white)
 
                 Spacer()
@@ -448,11 +462,11 @@ struct ReflectionSheet: View {
         VStack(alignment: .leading, spacing: 9) {
             HStack(spacing: 6) {
                 Image(systemName: symbol)
-                    .font(.system(size: 12))
+                    .font(.caption)
                     .foregroundStyle(gateAccent)
 
                 Text(title)
-                    .font(.system(size: 13, weight: .medium))
+                    .font(.footnote.weight(.medium))
                     .foregroundStyle(.white)
             }
 
@@ -463,20 +477,20 @@ struct ReflectionSheet: View {
                     Button {
                         value.wrappedValue = score
                     } label: {
-                        RoundedRectangle(cornerRadius: 8)
-                            .fill(
+                        Text("\(score)")
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(
+                                selected ? gateBackground : gateMuted
+                            )
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 6)
+                            .frame(minHeight: 32)
+                            .background(
                                 selected
                                     ? gateAccent
-                                    : .white.opacity(0.07)
+                                    : .white.opacity(0.07),
+                                in: RoundedRectangle(cornerRadius: 8)
                             )
-                            .frame(height: 32)
-                            .overlay {
-                                Text("\(score)")
-                                    .font(.system(size: 12, weight: .semibold))
-                                    .foregroundStyle(
-                                        selected ? gateBackground : gateMuted
-                                    )
-                            }
                     }
                     .buttonStyle(.plain)
                 }
@@ -487,7 +501,7 @@ struct ReflectionSheet: View {
                 Spacer()
                 Text(highLabel)
             }
-            .font(.system(size: 10))
+            .scaledFont(10, relativeTo: .caption2)
             .foregroundStyle(gateMuted)
         }
     }

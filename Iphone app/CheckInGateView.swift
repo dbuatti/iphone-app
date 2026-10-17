@@ -28,94 +28,94 @@ struct CheckInGateView: View {
         ZStack {
             background.ignoresSafeArea()
 
-            VStack(spacing: 0) {
-                Spacer()
+            PhoneFreeFillingScroll {
+                VStack(spacing: 0) {
+                    Spacer()
 
-                Image(systemName: "hourglass")
-                    .font(.system(size: 32))
-                    .foregroundStyle(accent)
+                    Image(systemName: "hourglass")
+                        .scaledFont(32, relativeTo: .largeTitle)
+                        .foregroundStyle(accent)
 
-                Text("You were away for")
-                    .font(.system(size: 15))
-                    .foregroundStyle(muted)
-                    .padding(.top, 18)
+                    Text("You were away for")
+                        .font(.subheadline)
+                        .foregroundStyle(muted)
+                        .padding(.top, 18)
 
-                Text(formatDuration(awayFor))
-                    .font(
-                        .system(
-                            size: 56,
-                            weight: .light,
-                            design: .rounded
-                        )
-                    )
-                    .monospacedDigit()
-                    .minimumScaleFactor(0.55)
-                    .lineLimit(1)
-                    .foregroundStyle(.white)
-                    .padding(.top, 2)
+                    Text(formatDuration(awayFor))
+                        .scaledFont(56, weight: .light, design: .rounded, relativeTo: .largeTitle)
+                        .monospacedDigit()
+                        .minimumScaleFactor(0.55)
+                        .lineLimit(1)
+                        .foregroundStyle(.white)
+                        .padding(.top, 2)
 
-                Text("Are you sure you want to use your phone now?")
-                    .font(.system(size: 17, weight: .medium))
-                    .foregroundStyle(.white)
-                    .multilineTextAlignment(.center)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .padding(.top, 26)
+                    Text("Are you sure you want to use your phone now?")
+                        .font(.body.weight(.medium))
+                        .foregroundStyle(.white)
+                        .multilineTextAlignment(.center)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .padding(.top, 26)
 
-                Text(
-                    "Still on it in "
-                    + PhoneFreeUsage.words(resetAfter)
-                    + " and your timer goes back to 0."
-                )
-                    .font(.system(size: 14))
-                    .foregroundStyle(muted)
-                    .multilineTextAlignment(.center)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .padding(.top, 8)
-
-                // Today's best, not today's count: a tally of pick-ups turns
-                // into something to check and feel bad about.
-                if bestToday >= 60 {
                     Text(
-                        "Your best stretch today is "
-                        + formatDuration(bestToday) + "."
+                        "Still on it in "
+                        + PhoneFreeUsage.words(resetAfter)
+                        + " and your timer goes back to 0."
                     )
-                        .font(.system(size: 12))
+                        .scaledFont(14, relativeTo: .subheadline)
                         .foregroundStyle(muted)
                         .multilineTextAlignment(.center)
                         .fixedSize(horizontal: false, vertical: true)
-                        .padding(.top, 18)
-                }
+                        .padding(.top, 8)
 
-                Spacer()
-
-                VStack(spacing: 14) {
-                    Button(action: onPutItDown) {
-                        Text("I'll put it down")
-                            .font(.system(size: 16, weight: .semibold))
-                            .foregroundStyle(background)
-                            .frame(maxWidth: .infinity)
-                            .frame(height: 58)
-                            .background(accent)
-                            .clipShape(RoundedRectangle(cornerRadius: 17))
-                    }
-                    .buttonStyle(.plain)
-
-                    Button(action: onUseAnyway) {
-                        Text("Use it anyway")
-                            .font(.system(size: 14, weight: .medium))
+                    // Today's best, not today's count: a tally of pick-ups turns
+                    // into something to check and feel bad about.
+                    if bestToday >= 60 {
+                        Text(
+                            "Your best stretch today is "
+                            + formatDuration(bestToday) + "."
+                        )
+                            .font(.caption)
                             .foregroundStyle(muted)
-                            .frame(maxWidth: .infinity)
-                            .frame(height: 48)
-                            .overlay {
-                                RoundedRectangle(cornerRadius: 14)
-                                    .stroke(.white.opacity(0.12), lineWidth: 1)
-                            }
+                            .multilineTextAlignment(.center)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .padding(.top, 18)
                     }
-                    .buttonStyle(.plain)
+
+                    Spacer()
+
+                    VStack(spacing: 14) {
+                        Button(action: onPutItDown) {
+                            Text("I'll put it down")
+                                .font(.callout.weight(.semibold))
+                                .multilineTextAlignment(.center)
+                                .foregroundStyle(background)
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 10)
+                                .frame(minHeight: 58)
+                                .background(accent)
+                                .clipShape(RoundedRectangle(cornerRadius: 17))
+                        }
+                        .buttonStyle(.plain)
+
+                        Button(action: onUseAnyway) {
+                            Text("Use it anyway")
+                                .scaledFont(14, weight: .medium, relativeTo: .subheadline)
+                                .multilineTextAlignment(.center)
+                                .foregroundStyle(muted)
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 10)
+                                .frame(minHeight: 48)
+                                .overlay {
+                                    RoundedRectangle(cornerRadius: 14)
+                                        .stroke(.white.opacity(0.12), lineWidth: 1)
+                                }
+                        }
+                        .buttonStyle(.plain)
+                    }
                 }
+                .padding(.horizontal, 28)
+                .padding(.bottom, 40)
             }
-            .padding(.horizontal, 28)
-            .padding(.bottom, 40)
         }
         .preferredColorScheme(.dark)
     }

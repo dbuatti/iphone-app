@@ -41,11 +41,13 @@ struct PromiseGateView: View {
         ZStack {
             background.ignoresSafeArea()
 
-            switch stage {
-            case .gate:
-                gate
-            case .confirm:
-                confirm
+            PhoneFreeFillingScroll {
+                switch stage {
+                case .gate:
+                    gate
+                case .confirm:
+                    confirm
+                }
             }
         }
         .preferredColorScheme(.dark)
@@ -58,19 +60,20 @@ struct PromiseGateView: View {
             Spacer()
 
             Image(systemName: "hand.raised.fill")
-                .font(.system(size: 34))
+                .font(.largeTitle)
                 .foregroundStyle(accent)
 
             VStack(spacing: 10) {
                 Text("You're in a phone-free goal.")
-                    .font(.system(size: 27, weight: .semibold))
+                    .scaledFont(27, weight: .semibold, relativeTo: .title)
                     .foregroundStyle(.white)
+                    .multilineTextAlignment(.center)
 
                 Text(
                     "You picked up your phone. That's okay. Urges usually "
                     + "fade within a minute or two if you wait them out."
                 )
-                    .font(.system(size: 14))
+                    .scaledFont(14, relativeTo: .subheadline)
                     .foregroundStyle(muted)
                     .multilineTextAlignment(.center)
                     .fixedSize(horizontal: false, vertical: true)
@@ -90,20 +93,17 @@ struct PromiseGateView: View {
 
                 VStack(spacing: 6) {
                     Text(formatTime(remaining))
-                        .font(
-                            .system(
-                                size: 58,
-                                weight: .light,
-                                design: .rounded
-                            )
-                        )
+                        .scaledFont(58, weight: .light, design: .rounded, relativeTo: .largeTitle)
                         .monospacedDigit()
+                        .minimumScaleFactor(0.55)
+                        .lineLimit(1)
                         .foregroundStyle(.white)
 
                     Text("\(elapsedMinutes) OF \(goalMinutes) MIN")
-                        .font(.system(size: 11, weight: .bold))
+                        .font(.caption2.weight(.bold))
                         .tracking(2)
                         .foregroundStyle(accent)
+                        .multilineTextAlignment(.center)
                 }
             }
             .padding(.top, 34)
@@ -113,10 +113,12 @@ struct PromiseGateView: View {
             VStack(spacing: 14) {
                 Button(action: onKeepGoing) {
                     Text("Keep going")
-                        .font(.system(size: 16, weight: .semibold))
+                        .font(.callout.weight(.semibold))
+                        .multilineTextAlignment(.center)
                         .foregroundStyle(background)
                         .frame(maxWidth: .infinity)
-                        .frame(height: 58)
+                        .padding(.vertical, 10)
+                        .frame(minHeight: 58)
                         .background(accent)
                         .clipShape(RoundedRectangle(cornerRadius: 17))
                 }
@@ -126,10 +128,12 @@ struct PromiseGateView: View {
                     stage = .confirm
                 } label: {
                     Text("End goal early")
-                        .font(.system(size: 14))
+                        .scaledFont(14, relativeTo: .subheadline)
+                        .multilineTextAlignment(.center)
                         .foregroundStyle(muted)
                         .frame(maxWidth: .infinity)
-                        .frame(height: 44)
+                        .padding(.vertical, 10)
+                        .frame(minHeight: 44)
                 }
                 .buttonStyle(.plain)
             }
@@ -145,14 +149,15 @@ struct PromiseGateView: View {
             Spacer()
 
             Text("End this goal early?")
-                .font(.system(size: 25, weight: .semibold))
+                .scaledFont(25, weight: .semibold, relativeTo: .title2)
                 .foregroundStyle(.white)
+                .multilineTextAlignment(.center)
 
             Text(
                 "The time you've already protected still counts. Take a "
                 + "breath first — you can always start another goal."
             )
-                .font(.system(size: 14))
+                .scaledFont(14, relativeTo: .subheadline)
                 .foregroundStyle(muted)
                 .multilineTextAlignment(.center)
                 .fixedSize(horizontal: false, vertical: true)
@@ -178,10 +183,12 @@ struct PromiseGateView: View {
                                 ? "Yes, end it now"
                                 : "Wait \(Int(ceil(left)))s…"
                         )
-                        .font(.system(size: 16, weight: .semibold))
+                        .font(.callout.weight(.semibold))
                         .foregroundStyle(.white.opacity(ready ? 1 : 0.5))
+                        .multilineTextAlignment(.center)
                         .frame(maxWidth: .infinity)
-                        .frame(height: 58)
+                        .padding(.vertical, 10)
+                        .frame(minHeight: 58)
                         .background(
                             .white.opacity(ready ? 0.12 : 0.05)
                         )
@@ -200,10 +207,12 @@ struct PromiseGateView: View {
                 cooldownStart = nil
             } label: {
                 Text("Keep going instead")
-                    .font(.system(size: 14, weight: .medium))
+                    .scaledFont(14, weight: .medium, relativeTo: .subheadline)
+                    .multilineTextAlignment(.center)
                     .foregroundStyle(accent)
                     .frame(maxWidth: .infinity)
-                    .frame(height: 48)
+                    .padding(.vertical, 10)
+                    .frame(minHeight: 48)
             }
             .buttonStyle(.plain)
             .padding(.top, 10)
@@ -213,28 +222,32 @@ struct PromiseGateView: View {
     }
 
     private var holdToUnlock: some View {
-        ZStack {
-            RoundedRectangle(cornerRadius: 17)
-                .fill(.white.opacity(0.06))
+        Text(isHolding ? "Keep holding…" : "Hold for 3 seconds to continue")
+            .font(.callout.weight(.semibold))
+            .foregroundStyle(.white)
+            .multilineTextAlignment(.center)
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 10)
+            .frame(minHeight: 58)
+            .background {
+                ZStack(alignment: .leading) {
+                    RoundedRectangle(cornerRadius: 17)
+                        .fill(.white.opacity(0.06))
 
-            GeometryReader { geo in
-                RoundedRectangle(cornerRadius: 17)
-                    .fill(accent.opacity(0.85))
-                    .frame(
-                        width: geo.size.width * (isHolding ? 1 : 0)
-                    )
-                    .animation(
-                        .linear(duration: isHolding ? holdDuration : 0.2),
-                        value: isHolding
-                    )
+                    GeometryReader { geo in
+                        RoundedRectangle(cornerRadius: 17)
+                            .fill(accent.opacity(0.85))
+                            .frame(
+                                width: geo.size.width * (isHolding ? 1 : 0)
+                            )
+                            .animation(
+                                .linear(duration: isHolding ? holdDuration : 0.2),
+                                value: isHolding
+                            )
+                    }
+                }
+                .clipShape(RoundedRectangle(cornerRadius: 17))
             }
-            .clipShape(RoundedRectangle(cornerRadius: 17))
-
-            Text(isHolding ? "Keep holding…" : "Hold for 3 seconds to continue")
-                .font(.system(size: 16, weight: .semibold))
-                .foregroundStyle(.white)
-        }
-        .frame(height: 58)
         .contentShape(RoundedRectangle(cornerRadius: 17))
         // The fill animation above is cosmetic. The only thing that can
         // unlock the button is `perform`, which SwiftUI fires strictly after
