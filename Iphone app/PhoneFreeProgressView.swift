@@ -132,9 +132,12 @@ struct PhoneFreeProgressView: View {
                 statCard(
                     value: "\(store.completedGoalsToday)",
                     label: "GOALS FINISHED",
-                    symbol: "checkmark.circle"
+                    symbol: "checkmark.seal.fill",
+                    tint: PhoneFreeTheme.reward
                 )
             }
+
+            freeTimeCard
 
             PhoneFreeCard {
                 HStack(spacing: 14) {
@@ -196,13 +199,14 @@ struct PhoneFreeProgressView: View {
     private func statCard(
         value: String,
         label: String,
-        symbol: String
+        symbol: String,
+        tint: Color = PhoneFreeTheme.accent
     ) -> some View {
         PhoneFreeCard {
             VStack(alignment: .leading, spacing: 10) {
                 Image(systemName: symbol)
                     .font(.callout)
-                    .foregroundStyle(PhoneFreeTheme.accent)
+                    .foregroundStyle(tint)
 
                 Text(value)
                     .scaledFont(24, weight: .medium, design: .rounded, relativeTo: .title2)
@@ -215,6 +219,55 @@ struct PhoneFreeProgressView: View {
                     .tracking(0.9)
                     .foregroundStyle(PhoneFreeTheme.muted)
                     .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+    }
+
+    /// The reward loop, where people look back at what they've done. Banked
+    /// free time is something gained, so it is only ever the reward colour —
+    /// never framed as a shortfall.
+    private var freeTimeCard: some View {
+        PhoneFreeCard {
+            HStack(alignment: .top, spacing: 14) {
+                Image(systemName: "bolt.fill")
+                    .scaledFont(18, relativeTo: .title3)
+                    .foregroundStyle(PhoneFreeTheme.reward)
+
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(PhoneFreeFormat.duration(store.surplusSeconds))
+                        .scaledFont(
+                            22,
+                            weight: .semibold,
+                            design: .rounded,
+                            relativeTo: .title2
+                        )
+                        .monospacedDigit()
+                        .foregroundStyle(.white)
+                        .accessibilityLabel(
+                            "\(PhoneFreeFormat.spoken(store.surplusSeconds)) "
+                            + "of free phone time banked"
+                        )
+
+                    Text("FREE TIME BANKED")
+                        .scaledFont(9, weight: .bold, relativeTo: .caption2)
+                        .tracking(0.9)
+                        .foregroundStyle(PhoneFreeTheme.reward)
+
+                    Text(
+                        store.surplusSeconds > 0
+                            ? "Earned by finishing goals. It pays for phone "
+                                + "time past your grace period, so your streak "
+                                + "survives."
+                            : "Finish a goal and you'll bank free phone time "
+                                + "here. It protects your streak while you use "
+                                + "your phone."
+                    )
+                    .font(.caption)
+                    .foregroundStyle(PhoneFreeTheme.muted)
+                    .fixedSize(horizontal: false, vertical: true)
+                }
+
+                Spacer(minLength: 0)
             }
         }
     }
@@ -378,7 +431,7 @@ struct PhoneFreeProgressView: View {
                 )
                 .scaledFont(18, relativeTo: .title3)
                 .foregroundStyle(
-                    completed ? PhoneFreeTheme.accent : PhoneFreeTheme.muted
+                    completed ? PhoneFreeTheme.reward : PhoneFreeTheme.muted
                 )
 
                 VStack(alignment: .leading, spacing: 3) {
@@ -396,7 +449,11 @@ struct PhoneFreeProgressView: View {
                 if let duration = event.duration {
                     Text(PhoneFreeFormat.duration(duration))
                         .font(.footnote.weight(.medium))
-                        .foregroundStyle(PhoneFreeTheme.accent)
+                        .foregroundStyle(
+                            completed
+                                ? PhoneFreeTheme.reward
+                                : PhoneFreeTheme.muted
+                        )
                 }
             }
         }

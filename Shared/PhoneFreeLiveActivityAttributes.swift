@@ -43,6 +43,11 @@ nonisolated struct PhoneFreeWidgetAttributes: ActivityAttributes {
         var pausedSeconds: TimeInterval? = nil
         var resetsAt: Date? = nil
 
+        /// While banked free time is paying for the session: how much of it
+        /// is left. `nil` when no shield is active. Lets the Lock Screen and
+        /// Dynamic Island say *why* the countdown is longer than usual.
+        var shieldLeft: TimeInterval? = nil
+
         /// Which planned activity should be on screen right now.
         ///
         /// Segments are in order, so the first one that has not yet finished is

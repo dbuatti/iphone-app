@@ -129,9 +129,10 @@ struct PhoneFreeSettingsView: View {
                                 .foregroundStyle(.white)
 
                             Text(
-                                "The number you see before you unlock, and a "
-                                + "countdown in the Dynamic Island while "
-                                + "you're on your phone."
+                                "The number you see before you unlock. It "
+                                + "keeps counting up the moment your phone is "
+                                + "locked, and the Dynamic Island counts down "
+                                + "while you're on it."
                             )
                             .font(.caption)
                             .foregroundStyle(PhoneFreeTheme.muted)

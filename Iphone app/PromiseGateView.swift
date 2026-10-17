@@ -92,12 +92,15 @@ struct PromiseGateView: View {
                 )
 
                 VStack(spacing: 6) {
-                    Text(formatTime(remaining))
+                    Text(PhoneFreeFormat.paddedClock(remaining))
                         .scaledFont(58, weight: .light, design: .rounded, relativeTo: .largeTitle)
                         .monospacedDigit()
                         .minimumScaleFactor(0.55)
                         .lineLimit(1)
                         .foregroundStyle(.white)
+                        .accessibilityLabel(
+                            "\(PhoneFreeFormat.spoken(remaining)) left"
+                        )
 
                     Text("\(elapsedMinutes) OF \(goalMinutes) MIN")
                         .font(.caption2.weight(.bold))
@@ -262,24 +265,6 @@ struct PromiseGateView: View {
         } onPressingChanged: { pressing in
             isHolding = pressing
         }
-    }
-
-    private func formatTime(_ interval: TimeInterval) -> String {
-        let seconds = max(0, Int(interval))
-        let hours = seconds / 3600
-        let minutes = (seconds % 3600) / 60
-        let remainder = seconds % 60
-
-        if hours > 0 {
-            return String(
-                format: "%d:%02d:%02d",
-                hours,
-                minutes,
-                remainder
-            )
-        }
-
-        return String(format: "%02d:%02d", minutes, remainder)
     }
 }
 

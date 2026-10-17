@@ -17,6 +17,12 @@
 //  seconds never happened. Still on it after the grace period, and the counter
 //  goes to zero and stays there until the phone is put down.
 //
+//  Surplus is the reward layer on top of that. Finishing a phone-free goal
+//  banks free phone time; while it lasts it pays for use *past* the grace
+//  period, so the counter stays frozen instead of resetting. Spend it all and
+//  the ordinary rule resumes. The bank is capped, so it can never quietly
+//  become "unlimited phone".
+//
 //  iOS gives no unlock or "stopped using" signal, so `usingSince` is only as
 //  good as what reports it: PhoneFree being open, and the Shortcuts
 //  automations the user sets up for the apps that pull at them. A session
@@ -36,6 +42,11 @@ nonisolated enum PhoneFreeUsage {
     static let bestEverKey = "phoneFreeBestStretch"
     static let bestTodayKey = "phoneFreeBestStretchToday"
     static let bestTodayDayKey = "phoneFreeBestStretchDay"
+    static let surplusKey = "phoneFreeSurplus"
+
+    /// The most free time the bank will hold. An hour is enough to matter and
+    /// small enough that it cannot quietly become "unlimited phone".
+    static let maxSurplus: TimeInterval = 60 * 60
 
     /// Seconds of use before the counter resets. Long enough to check the
     /// time or answer one message; short enough that scrolling never fits.
@@ -57,6 +68,13 @@ nonisolated enum PhoneFreeUsage {
         var usingSince: Date?
         var resetAfter: TimeInterval = PhoneFreeUsage.defaultResetAfter
 
+        /// Banked free phone time, earned by finishing phone-free goals. While
+        /// the phone is in use it is spent at one second per second, after the
+        /// base grace period, so the counter keeps its freeze instead of
+        /// resetting to zero. Doing activities buys freedom to use the phone
+        /// without losing the number.
+        var surplus: TimeInterval = 0
+
         /// The longest *finished* stretch ever, and today's. A stretch
         /// finishes when the counter goes back to zero — not when the phone is
         /// briefly picked up — so these always agree with the counter.
@@ -72,14 +90,44 @@ nonisolated enum PhoneFreeUsage {
             return bestToday
         }
 
-        /// The moment the counter resets, while a use session is open.
-        var resetsAt: Date? {
+        /// The moment the base grace period ends and surplus starts paying.
+        var baseGraceEndsAt: Date? {
             usingSince?.addingTimeInterval(resetAfter)
         }
 
+        /// The moment the counter resets: the base grace plus whatever surplus
+        /// is banked. While a session is open, this is the end of the shield.
+        var resetsAt: Date? {
+            usingSince?.addingTimeInterval(resetAfter + surplus)
+        }
+
+        /// How much of this session's use surplus is absorbing — the seconds
+        /// used past the base grace, capped at the bank.
+        func surplusInUse(at now: Date) -> TimeInterval {
+            guard let usingSince else { return 0 }
+            let used = max(0, now.timeIntervalSince(usingSince))
+            return min(surplus, max(0, used - resetAfter))
+        }
+
+        /// Surplus left once this session's use is paid for.
+        func surplusRemaining(at now: Date) -> TimeInterval {
+            max(0, surplus - surplusInUse(at: now))
+        }
+
+        /// `true` when a session is being shielded by surplus — worth saying
+        /// out loud, because it is the reward for the activities just done.
+        func isShielded(at now: Date) -> Bool {
+            isUsing(at: now) && surplusInUse(at: now) > 0
+        }
+
+        /// A session is abandoned only when it is past the shield *and* the
+        /// long stop-gap, so surplus-covered use is never mistaken for an
+        /// abandoned one.
         func isAbandoned(at now: Date) -> Bool {
             guard let usingSince else { return false }
-            return now.timeIntervalSince(usingSince) >= PhoneFreeUsage.abandonAfter
+            let used = now.timeIntervalSince(usingSince)
+            return used >= resetAfter + surplus
+                && used >= PhoneFreeUsage.abandonAfter
         }
 
         /// `true` while the phone is being used and the session is live.
@@ -87,7 +135,8 @@ nonisolated enum PhoneFreeUsage {
             usingSince != nil && !isAbandoned(at: now)
         }
 
-        /// `true` once the grace period has run out on the open session.
+        /// `true` once the grace period *and* the surplus have run out on the
+        /// open session — the point the streak actually resets.
         func hasReset(at now: Date) -> Bool {
             guard isUsing(at: now), let resetsAt else { return false }
             return now >= resetsAt
@@ -136,9 +185,9 @@ nonisolated enum PhoneFreeUsage {
             }
         }
 
-        /// The phone has been put down. Inside the grace period the used
-        /// seconds are skipped, not counted; past it, the stretch starts again
-        /// from now.
+        /// The phone has been put down. Inside the base grace the used seconds
+        /// are skipped, not counted. Past it, surplus pays for them and the
+        /// streak survives. Only when both run out does the counter reset.
         mutating func endUse(at now: Date) {
             guard let usingSince, !isAbandoned(at: now) else {
                 self = settled(at: now)
@@ -147,11 +196,14 @@ nonisolated enum PhoneFreeUsage {
 
             let used = max(0, now.timeIntervalSince(usingSince))
 
-            if used < resetAfter, let lastCheckIn {
+            if used < resetAfter + surplus, let lastCheckIn {
+                // The phone time was free — the counter skips it entirely.
                 self.lastCheckIn = lastCheckIn.addingTimeInterval(used)
+                surplus = max(0, surplus - max(0, used - resetAfter))
             } else {
                 record(frozenInterval, endedAt: usingSince)
                 self.lastCheckIn = now
+                surplus = 0
             }
 
             self.usingSince = nil
@@ -172,8 +224,8 @@ nonisolated enum PhoneFreeUsage {
 
         /// Called every so often while PhoneFree itself is open — a use signal
         /// that is certain, so the session must never be given up on as
-        /// abandoned. Once the grace period has passed (the counter is at zero
-        /// anyway) the session is re-anchored to now, keeping it fresh.
+        /// abandoned. Past the grace, the visit charges the surplus and the
+        /// session is re-anchored to now, so the shield stays honest.
         mutating func keepAlive(at now: Date) {
             guard let usingSince else {
                 beginUse(at: now)
@@ -182,14 +234,36 @@ nonisolated enum PhoneFreeUsage {
 
             guard now.timeIntervalSince(usingSince) > 10 * 60 else { return }
 
-            // Close the stretch the session froze, then hold at zero.
-            record(frozenInterval, endedAt: usingSince)
-            lastCheckIn = now
-            self.usingSince = now.addingTimeInterval(-resetAfter)
+            let used = now.timeIntervalSince(usingSince)
+
+            if used < resetAfter + surplus, let lastCheckIn {
+                // Free time paid for the visit; keep the streak and the shield.
+                self.lastCheckIn = lastCheckIn.addingTimeInterval(used)
+                surplus = max(0, surplus - max(0, used - resetAfter))
+            } else {
+                record(frozenInterval, endedAt: usingSince)
+                lastCheckIn = now
+                surplus = 0
+            }
+
+            self.usingSince = now
+        }
+
+        /// Credits earned phone-free time to the bank, capped. Returns how much
+        /// was actually banked, so the UI can honestly say "+20 min" only when
+        /// all of it landed.
+        @discardableResult
+        mutating func creditSurplus(_ seconds: TimeInterval) -> TimeInterval {
+            guard seconds >= 1 else { return 0 }
+            let room = max(0, PhoneFreeUsage.maxSurplus - surplus)
+            let credited = min(seconds, room)
+            surplus += credited
+            return credited
         }
 
         /// An abandoned session folded into `lastCheckIn`: it is assumed to
-        /// have run past the grace period, so the reset stands from then.
+        /// have run past the whole shield, so the reset stands from then and
+        /// the bank is spent.
         func settled(at now: Date) -> State {
             guard isAbandoned(at: now), let resetsAt else { return self }
 
@@ -197,6 +271,7 @@ nonisolated enum PhoneFreeUsage {
             copy.record(frozenInterval, endedAt: resetsAt)
             copy.lastCheckIn = resetsAt
             copy.usingSince = nil
+            copy.surplus = 0
             return copy
         }
 
@@ -228,6 +303,7 @@ nonisolated enum PhoneFreeUsage {
             lastCheckIn: defaults?.object(forKey: lastCheckInKey) as? Date,
             usingSince: defaults?.object(forKey: usingSinceKey) as? Date,
             resetAfter: resetAfter > 0 ? resetAfter : defaultResetAfter,
+            surplus: defaults?.double(forKey: surplusKey) ?? 0,
             bestEver: defaults?.double(forKey: bestEverKey) ?? 0,
             bestToday: defaults?.double(forKey: bestTodayKey) ?? 0,
             bestTodayDay: defaults?.object(forKey: bestTodayDayKey) as? Date
@@ -248,6 +324,7 @@ nonisolated enum PhoneFreeUsage {
         }
 
         defaults.set(state.resetAfter, forKey: resetAfterKey)
+        defaults.set(state.surplus, forKey: surplusKey)
         defaults.set(state.bestEver, forKey: bestEverKey)
         defaults.set(state.bestToday, forKey: bestTodayKey)
 

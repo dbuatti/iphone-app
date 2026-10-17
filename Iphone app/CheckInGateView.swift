@@ -41,13 +41,17 @@ struct CheckInGateView: View {
                         .foregroundStyle(muted)
                         .padding(.top, 18)
 
-                    Text(formatDuration(awayFor))
+                    Text(PhoneFreeFormat.paddedClock(awayFor))
                         .scaledFont(56, weight: .light, design: .rounded, relativeTo: .largeTitle)
                         .monospacedDigit()
                         .minimumScaleFactor(0.55)
                         .lineLimit(1)
                         .foregroundStyle(.white)
                         .padding(.top, 2)
+                        .accessibilityLabel(
+                            "You were away for "
+                            + PhoneFreeFormat.spoken(awayFor)
+                        )
 
                     Text("Are you sure you want to use your phone now?")
                         .font(.body.weight(.medium))
@@ -72,7 +76,7 @@ struct CheckInGateView: View {
                     if bestToday >= 60 {
                         Text(
                             "Your best stretch today is "
-                            + formatDuration(bestToday) + "."
+                            + PhoneFreeFormat.paddedClock(bestToday) + "."
                         )
                             .font(.caption)
                             .foregroundStyle(muted)
@@ -118,24 +122,6 @@ struct CheckInGateView: View {
             }
         }
         .preferredColorScheme(.dark)
-    }
-
-    private func formatDuration(_ interval: TimeInterval) -> String {
-        let seconds = max(0, Int(interval))
-        let hours = seconds / 3600
-        let minutes = (seconds % 3600) / 60
-        let remainder = seconds % 60
-
-        if hours > 0 {
-            return String(
-                format: "%d:%02d:%02d",
-                hours,
-                minutes,
-                remainder
-            )
-        }
-
-        return String(format: "%02d:%02d", minutes, remainder)
     }
 }
 

@@ -36,6 +36,7 @@ struct PhoneFreeOnboardingView: View {
     @Environment(\.openURL) private var openURL
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         ZStack {
@@ -44,7 +45,12 @@ struct PhoneFreeOnboardingView: View {
             VStack(spacing: 0) {
                 progress
                     .padding(.top, 12)
-                    .animation(.easeInOut(duration: 0.25), value: step)
+                    .animation(
+                        reduceMotion
+                            ? nil
+                            : .easeInOut(duration: 0.25),
+                        value: step
+                    )
 
                 ScrollView(showsIndicators: false) {
                     page

@@ -20,11 +20,16 @@ struct PhoneFreeAwayView: View {
     @State private var showingPlanBuilder = false
 
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         ScrollView(showsIndicators: false) {
             VStack(spacing: 26) {
                 header
+
+                if let award = store.surplusAward {
+                    surplusAwardBanner(award)
+                }
 
                 if store.showsResetCountdown() {
                     usageBanner
@@ -38,11 +43,17 @@ struct PhoneFreeAwayView: View {
                     startSection
                 }
 
+                surplusCard
+
                 todaySummary
             }
             .padding(.horizontal, PhoneFreeTheme.screenPadding)
             .padding(.top, 12)
             .padding(.bottom, 40)
+            .animation(
+                reduceMotion ? nil : .snappy,
+                value: store.surplusAward
+            )
         }
         .background(PhoneFreeTheme.background)
         .sheet(isPresented: $showingPlanBuilder) {
@@ -82,6 +93,8 @@ struct PhoneFreeAwayView: View {
     private var awayHero: some View {
         VStack(spacing: 14) {
             TimelineView(.periodic(from: .now, by: 1)) { context in
+                let away = store.awayInterval(at: context.date)
+
                 VStack(spacing: 16) {
                     Text(
                         heroCaption(at: context.date)
@@ -91,12 +104,13 @@ struct PhoneFreeAwayView: View {
                     .foregroundStyle(PhoneFreeTheme.muted)
                     .multilineTextAlignment(.center)
 
-                    Text(PhoneFreeFormat.clock(store.awayInterval(at: context.date)))
+                    Text(PhoneFreeFormat.clock(away))
                         .scaledFont(64, weight: .light, design: .rounded, relativeTo: .largeTitle)
                         .monospacedDigit()
                         .minimumScaleFactor(0.5)
                         .lineLimit(1)
                         .foregroundStyle(.white)
+                        .accessibilityLabel(PhoneFreeFormat.spoken(away))
 
                     Rectangle()
                         .fill(PhoneFreeTheme.cardBorder)
@@ -137,6 +151,8 @@ struct PhoneFreeAwayView: View {
                 .multilineTextAlignment(.center)
 
             TimelineView(.periodic(from: .now, by: 1)) { context in
+                let remaining = store.goalRemaining(at: context.date)
+
                 VStack(spacing: 18) {
                     ZStack {
                         Circle()
@@ -157,16 +173,15 @@ struct PhoneFreeAwayView: View {
                             .rotationEffect(.degrees(-90))
 
                         VStack(spacing: 6) {
-                            Text(
-                                PhoneFreeFormat.clock(
-                                    store.goalRemaining(at: context.date)
-                                )
-                            )
+                            Text(PhoneFreeFormat.clock(remaining))
                             .scaledFont(40, weight: .light, design: .rounded, relativeTo: .largeTitle)
                             .monospacedDigit()
                             .minimumScaleFactor(0.4)
                             .lineLimit(1)
                             .foregroundStyle(.white)
+                            .accessibilityLabel(
+                                "\(PhoneFreeFormat.spoken(remaining)) remaining"
+                            )
 
                             Text("REMAINING")
                                 .scaledFont(10, weight: .bold, relativeTo: .caption2)
@@ -210,6 +225,133 @@ struct PhoneFreeAwayView: View {
             )
             .stroke(PhoneFreeTheme.cardBorder, lineWidth: 1)
         }
+    }
+
+    // MARK: - Surplus
+    //
+    // The reward loop, made visible: finish a goal, bank free phone time, and
+    // watch that time protect the streak while the phone is in use.
+
+    private func surplusAwardBanner(_ seconds: TimeInterval) -> some View {
+        HStack(spacing: 12) {
+            Image(systemName: "bolt.fill")
+                .font(.headline)
+                .foregroundStyle(PhoneFreeTheme.reward)
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(
+                    "You earned " + PhoneFreeFormat.duration(seconds)
+                    + " of free phone time"
+                )
+                .font(.subheadline.weight(.bold))
+                .foregroundStyle(.white)
+                .fixedSize(horizontal: false, vertical: true)
+
+                Text("It's banked, and it protects your streak.")
+                    .font(.caption)
+                    .foregroundStyle(PhoneFreeTheme.muted)
+            }
+
+            Spacer(minLength: 0)
+        }
+        .padding(14)
+        .background(PhoneFreeTheme.reward.opacity(0.16))
+        .clipShape(
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+        )
+        .overlay {
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .stroke(PhoneFreeTheme.reward.opacity(0.5), lineWidth: 1)
+        }
+        .accessibilityElement(children: .combine)
+        .transition(.move(edge: .top).combined(with: .opacity))
+    }
+
+    private var surplusCard: some View {
+        TimelineView(.periodic(from: .now, by: 1)) { context in
+            let banked = store.surplusSeconds
+            let remaining = store.surplusRemaining(at: context.date)
+            let shielded = store.isShielded(at: context.date)
+
+            PhoneFreeCard {
+                VStack(alignment: .leading, spacing: 12) {
+                    PhoneFreeAdaptiveStack(spacing: 14) {
+                        ZStack {
+                            Circle()
+                                .fill(PhoneFreeTheme.reward.opacity(0.16))
+
+                            Image(systemName: "bolt.fill")
+                                .font(.headline)
+                                .foregroundStyle(PhoneFreeTheme.reward)
+                        }
+                        .frame(width: 46, height: 46)
+
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text(
+                                shielded
+                                    ? "Free time is protecting your streak"
+                                    : "Free phone time"
+                            )
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(.white)
+
+                            Text(
+                                PhoneFreeFormat.duration(
+                                    shielded ? remaining : banked
+                                )
+                            )
+                            .font(
+                                .system(
+                                    .title2,
+                                    design: .rounded,
+                                    weight: .bold
+                                )
+                            )
+                            .monospacedDigit()
+                            .foregroundStyle(PhoneFreeTheme.reward)
+                            .accessibilityLabel(
+                                "\(PhoneFreeFormat.spoken(shielded ? remaining : banked)) of free phone time"
+                            )
+                        }
+
+                        Spacer(minLength: 0)
+                    }
+
+                    progressBar(
+                        banked / max(store.surplusCap, 1),
+                        tint: PhoneFreeTheme.reward,
+                        label: "Free phone time banked"
+                    )
+
+                    Text(
+                        surplusExplanation(shielded: shielded, banked: banked)
+                    )
+                    .font(.caption)
+                    .foregroundStyle(PhoneFreeTheme.muted)
+                    .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+        }
+    }
+
+    private func surplusExplanation(
+        shielded: Bool,
+        banked: TimeInterval
+    ) -> String {
+        if shielded {
+            return "You're using banked time instead of your streak. When it "
+                + "runs out, your counter starts again — so lock up to save "
+                + "what's left."
+        }
+
+        if banked <= 0 {
+            return "Finish a phone-free goal and you'll bank free phone time "
+                + "here. Use your phone and it pays for the time, so your "
+                + "streak survives."
+        }
+
+        return "Earned by finishing goals. Use your phone and this pays for "
+            + "it, so your counter keeps its place."
     }
 
     // MARK: - Target block
@@ -269,6 +411,7 @@ struct PhoneFreeAwayView: View {
 
     private func progressBar(
         _ progress: Double,
+        tint: Color = PhoneFreeTheme.accent,
         label: String = "Progress towards your next target"
     ) -> some View {
         GeometryReader { geometry in
@@ -277,8 +420,8 @@ struct PhoneFreeAwayView: View {
                     .fill(Color.white.opacity(0.08))
 
                 Capsule()
-                    .fill(PhoneFreeTheme.accent)
-                    .frame(width: geometry.size.width * progress)
+                    .fill(tint)
+                    .frame(width: geometry.size.width * min(max(progress, 0), 1))
             }
         }
         .frame(height: 6)
@@ -379,6 +522,12 @@ struct PhoneFreeAwayView: View {
 
     // MARK: - Start a goal
 
+    /// The goal length the primary button will start — named here so the
+    /// reward hint can promise the same number the goal will bank.
+    private var goalMinutes: Int {
+        store.plan.isEmpty ? store.selectedMinutes : store.planTotalMinutes
+    }
+
     private var startSection: some View {
         VStack(alignment: .leading, spacing: 18) {
             PhoneFreeSectionLabel("START PHONE-FREE TIME")
@@ -402,6 +551,17 @@ struct PhoneFreeAwayView: View {
                 ) {
                     store.startGoal()
                 }
+
+                Label(
+                    "Finish it and you bank \(goalMinutes) min of free "
+                    + "phone time.",
+                    systemImage: "bolt.fill"
+                )
+                .font(.caption.weight(.medium))
+                .foregroundStyle(PhoneFreeTheme.reward)
+                .multilineTextAlignment(.center)
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(maxWidth: .infinity)
 
                 Text("Then lock your screen. The countdown keeps going on "
                      + "your Lock Screen.")
@@ -442,6 +602,7 @@ struct PhoneFreeAwayView: View {
                     : store.selectedMinutes == minutes
 
                 Button {
+                    store.play(.selection)
                     store.selectedMinutes = minutes
                     store.save()
                 } label: {
@@ -582,7 +743,8 @@ struct PhoneFreeAwayView: View {
             statCard(
                 value: "\(store.completedGoalsToday)",
                 label: "GOALS FINISHED TODAY",
-                symbol: "checkmark.circle"
+                symbol: "checkmark.seal.fill",
+                tint: PhoneFreeTheme.reward
             )
         }
         .fixedSize(horizontal: false, vertical: true)
@@ -591,13 +753,14 @@ struct PhoneFreeAwayView: View {
     private func statCard(
         value: String,
         label: String,
-        symbol: String
+        symbol: String,
+        tint: Color = PhoneFreeTheme.accent
     ) -> some View {
         PhoneFreeCard {
             VStack(alignment: .leading, spacing: 10) {
                 Image(systemName: symbol)
                     .font(.callout)
-                    .foregroundStyle(PhoneFreeTheme.accent)
+                    .foregroundStyle(tint)
 
                 Text(value)
                     .scaledFont(26, weight: .medium, design: .rounded, relativeTo: .title)
@@ -641,41 +804,52 @@ struct PhoneFreeAwayView: View {
                 max(0, $0.timeIntervalSince(context.date))
             } ?? 0
 
+            let shielded = store.isShielded(at: context.date)
+
+            // The bar covers the whole shield — the base grace plus whatever
+            // free time is banked — so it shrinks at an honest, even rate.
+            let fullGrace = max(usage.resetAfter + usage.surplus, 1)
+            let tint = shielded
+                ? PhoneFreeTheme.reward
+                : PhoneFreeTheme.accent
+
             PhoneFreeCard {
                 VStack(alignment: .leading, spacing: 12) {
                     HStack(alignment: .top, spacing: 12) {
                         Image(
                             systemName: reset
                                 ? "arrow.counterclockwise"
-                                : "hourglass.bottomhalf.filled"
+                                : (shielded
+                                    ? "bolt.fill"
+                                    : "hourglass.bottomhalf.filled")
                         )
                         .font(.subheadline)
-                        .foregroundStyle(PhoneFreeTheme.accent)
+                        .foregroundStyle(tint)
 
                         VStack(alignment: .leading, spacing: 4) {
                             Text(
                                 reset
                                     ? "Your timer started again"
-                                    : "Timer resets in "
-                                        + PhoneFreeUsage.shortSeconds(left)
+                                    : (shielded
+                                        ? "Free time is protecting your "
+                                            + "streak"
+                                        : "Timer resets in "
+                                            + PhoneFreeUsage.shortSeconds(
+                                                left
+                                            ))
                             )
                             .font(.subheadline.weight(.semibold))
                             .monospacedDigit()
                             .foregroundStyle(.white)
+                            .fixedSize(horizontal: false, vertical: true)
 
                             Text(
-                                reset
-                                    ? "That's okay. It counts up again from the "
-                                        + "moment you put your phone down."
-                                    : "You're on your phone, so the counter is "
-                                        + "paused. Lock it now and "
-                                        + (usage.frozenInterval >= 60
-                                            ? "your "
-                                                + PhoneFreeFormat.clock(
-                                                    usage.frozenInterval
-                                                )
-                                                + " carries on."
-                                            : "it carries on.")
+                                bannerDetail(
+                                    frozen: usage.frozenInterval,
+                                    reset: reset,
+                                    shielded: shielded,
+                                    left: left
+                                )
                             )
                             .font(.caption)
                             .foregroundStyle(PhoneFreeTheme.muted)
@@ -687,8 +861,11 @@ struct PhoneFreeAwayView: View {
 
                     if !reset {
                         progressBar(
-                            left / max(usage.resetAfter, 1),
-                            label: "Time left before your timer resets"
+                            left / fullGrace,
+                            tint: tint,
+                            label: shielded
+                                ? "Free time left before your timer resets"
+                                : "Time left before your timer resets"
                         )
 
                         // No button: the only way to put the phone down is to
@@ -698,11 +875,35 @@ struct PhoneFreeAwayView: View {
                             systemImage: "lock"
                         )
                         .font(.footnote.weight(.medium))
-                        .foregroundStyle(PhoneFreeTheme.accent)
+                        .foregroundStyle(tint)
                     }
                 }
             }
         }
+    }
+
+    private func bannerDetail(
+        frozen: TimeInterval,
+        reset: Bool,
+        shielded: Bool,
+        left: TimeInterval
+    ) -> String {
+        if reset {
+            return "That's okay. It counts up again from the moment you put "
+                + "your phone down."
+        }
+
+        if shielded {
+            return "You're spending banked free time, not your streak. "
+                + "\(PhoneFreeUsage.shortSeconds(left)) left before it resets "
+                + "— lock it to save the rest."
+        }
+
+        return "You're on your phone, so the counter is paused. Lock it now "
+            + "and "
+            + (frozen >= 60
+                ? "your " + PhoneFreeFormat.clock(frozen) + " carries on."
+                : "it carries on.")
     }
 }
 

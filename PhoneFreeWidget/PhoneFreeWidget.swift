@@ -130,13 +130,23 @@ struct PhoneFreeProvider: TimelineProvider {
 
         let gap = usage.awayInterval(at: now)
 
+        // Where the Lock Screen counts up from. With a session open that is
+        // the stretch that was frozen — when the phone was picked up, less
+        // what was already earned — so locking the phone carries the number
+        // on rather than freezing it while the app is suspended.
+        let awayAnchor: Date? = using
+            ? usage.usingSince.map {
+                $0.addingTimeInterval(-usage.frozenInterval)
+            }
+            : usage.countingSince(at: now)
+
         return PhoneFreeEntry(
             date: now,
             goalEnd: end,
             goalActive: active,
             goalsCompletedToday: completedCount,
             protectedMinutesToday: Int(protectedSeconds / 60),
-            lastCheckIn: usage.countingSince(at: now),
+            lastCheckIn: awayAnchor,
             nextTargetSeconds: PhoneFreeTargets.next(after: gap),
             bestGapSeconds: bestGapSeconds,
             pausedSeconds: using && !usage.hasReset(at: now)
@@ -159,16 +169,16 @@ struct PhoneFreeWidgetEntryView: View {
 
     let entry: PhoneFreeEntry
 
-    private let lavender = Color(
-        red: 0.72, green: 0.66, blue: 1.0
+    private let violet = Color(
+        red: 0.62, green: 0.49, blue: 1.0
     )
 
-    private let mint = Color(
-        red: 0.76, green: 0.91, blue: 0.75
+    private let lime = Color(
+        red: 0.76, green: 1.0, blue: 0.34
     )
 
     private let background = Color(
-        red: 0.075, green: 0.08, blue: 0.18
+        red: 0.043, green: 0.039, blue: 0.086
     )
 
     private var activeGoal: Bool {
@@ -213,6 +223,15 @@ struct PhoneFreeWidgetEntryView: View {
     }
 
     private var accessoryCaption: String {
+        accessoryIsGoal
+            ? "TIME LEFT TO YOUR GOAL"
+            : "SINCE YOU LAST USED YOUR PHONE"
+    }
+
+    /// The Home Screen wording. There the phone is plainly in your hand, so
+    /// "paused" and "held at zero" are honest and useful; on the Lock Screen
+    /// the number simply counts on.
+    private var mediumCaption: String {
         if accessoryIsGoal { return "TIME LEFT TO YOUR GOAL" }
         if entry.pausedSeconds != nil { return "PAUSED — ON YOUR PHONE" }
         if entry.heldAtZero { return "RESET — PUT IT DOWN" }
@@ -260,24 +279,7 @@ struct PhoneFreeWidgetEntryView: View {
         ZStack {
             AccessoryWidgetBackground()
 
-            if let still = stillCounterText, !accessoryIsGoal {
-                VStack(spacing: 0) {
-                    Image(systemName: "pause.fill")
-                        .font(.system(size: 10, weight: .semibold))
-
-                    Text(still)
-                        .font(
-                            .system(
-                                size: 13,
-                                weight: .semibold,
-                                design: .rounded
-                            )
-                        )
-                        .monospacedDigit()
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.45)
-                }
-            } else if let date = accessoryDate {
+            if let date = accessoryDate {
                 VStack(spacing: 0) {
                     Image(systemName: accessorySymbol)
                         .font(.system(size: 10, weight: .semibold))
@@ -310,19 +312,7 @@ struct PhoneFreeWidgetEntryView: View {
                 .lineLimit(1)
                 .minimumScaleFactor(0.7)
 
-            if let still = stillCounterText, !accessoryIsGoal {
-                Text(still)
-                    .font(
-                        .system(
-                            size: 22,
-                            weight: .semibold,
-                            design: .rounded
-                        )
-                    )
-                    .monospacedDigit()
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.6)
-            } else if let date = accessoryDate {
+            if let date = accessoryDate {
                 Text(date, style: .timer)
                     .font(
                         .system(
@@ -356,9 +346,7 @@ struct PhoneFreeWidgetEntryView: View {
 
     private var accessoryInline: some View {
         Group {
-            if let still = stillCounterText, !accessoryIsGoal {
-                Label("\(still) · paused", systemImage: "pause.fill")
-            } else if let date = accessoryDate {
+            if let date = accessoryDate {
                 Label {
                     Text(date, style: .timer)
                 } icon: {
@@ -394,7 +382,7 @@ struct PhoneFreeWidgetEntryView: View {
                             )
                         )
                         .monospacedDigit()
-                        .foregroundStyle(mint)
+                        .foregroundStyle(violet)
                         .lineLimit(1)
                         .minimumScaleFactor(0.55)
 
@@ -405,7 +393,7 @@ struct PhoneFreeWidgetEntryView: View {
                 }
             } else if let still = stillCounterText {
                 VStack(alignment: .leading, spacing: 4) {
-                    Text(accessoryCaption)
+                    Text(mediumCaption)
                         .font(.system(size: 9, weight: .bold))
                         .tracking(0.5)
                         .foregroundStyle(.white.opacity(0.7))
@@ -419,7 +407,7 @@ struct PhoneFreeWidgetEntryView: View {
                             )
                         )
                         .monospacedDigit()
-                        .foregroundStyle(mint.opacity(0.6))
+                        .foregroundStyle(violet.opacity(0.6))
                         .lineLimit(1)
                         .minimumScaleFactor(0.55)
 
@@ -449,7 +437,7 @@ struct PhoneFreeWidgetEntryView: View {
                             )
                         )
                         .monospacedDigit()
-                        .foregroundStyle(mint)
+                        .foregroundStyle(violet)
                         .lineLimit(1)
                         .minimumScaleFactor(0.55)
 
@@ -487,7 +475,7 @@ struct PhoneFreeWidgetEntryView: View {
                     .foregroundStyle(background)
                     .frame(maxWidth: .infinity, minHeight: 32)
                     .background(
-                        mint,
+                        violet,
                         in: RoundedRectangle(cornerRadius: 9)
                     )
                 }
@@ -495,7 +483,7 @@ struct PhoneFreeWidgetEntryView: View {
                 VStack(alignment: .trailing, spacing: 1) {
                     Text("\(entry.goalsCompletedToday)")
                         .font(.system(size: 17, weight: .bold, design: .rounded))
-                        .foregroundStyle(lavender)
+                        .foregroundStyle(lime)
 
                     Text("DONE TODAY")
                         .font(.system(size: 7, weight: .bold))
@@ -513,12 +501,12 @@ struct PhoneFreeWidgetEntryView: View {
     private var header: some View {
         HStack(spacing: 5) {
             Image(systemName: "moon.stars.fill")
-                .foregroundStyle(lavender)
+                .foregroundStyle(violet)
 
             Text("PHONEFREE")
                 .font(.system(size: 11, weight: .bold))
                 .tracking(1.2)
-                .foregroundStyle(lavender)
+                .foregroundStyle(violet)
 
             Spacer()
 

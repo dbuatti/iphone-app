@@ -146,13 +146,19 @@ final class PhoneFreeLiveActivityManager {
 
         if usage.isUsing(at: now), let usingSince = usage.usingSince {
             state.startDate = usingSince
-            state.pausedSeconds = usage.hasReset(at: now)
-                ? 0
-                : usage.frozenInterval
+
+            // The whole frozen stretch, even after it resets, so the Lock
+            // Screen can carry the number on from where it was rather than
+            // dropping it to zero the moment the grace period ends.
+            state.pausedSeconds = usage.frozenInterval
             state.resetsAt = usage.resetsAt
 
-            // Going stale at the reset is what switches the Lock Screen to
-            // the reset message without the app having to run.
+            if usage.isShielded(at: now) {
+                state.shieldLeft = usage.surplusRemaining(at: now)
+            }
+
+            // Going stale at the reset is what switches the Dynamic Island
+            // to "held at zero" without the app having to run.
             if let resetsAt = usage.resetsAt, resetsAt > now {
                 staleDate = resetsAt
             }

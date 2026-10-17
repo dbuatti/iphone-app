@@ -32,6 +32,19 @@ struct PhoneFreeEvent: Codable, Identifiable, Hashable {
     var duration: TimeInterval?
 }
 
+/// The app's tiny haptic vocabulary. Named by intent rather than by feel, so
+/// the same action always feels the same as screens change.
+nonisolated enum PhoneFreeHaptic {
+    /// Picking between options — light and near-imperceptible.
+    case selection
+    /// A gentle acknowledgement.
+    case light
+    /// Something worth noticing.
+    case medium
+    /// Something earned. Reserved for wins, so it keeps its meaning.
+    case success
+}
+
 nonisolated enum PhoneFreeEventKind {
     static let goalStarted = "goal_started"
     static let goalCompleted = "goal_completed"
@@ -55,6 +68,22 @@ final class PhoneFreeStore {
 
     /// Durations offered on the home screen. Short, clear, few.
     let goalOptions = [5, 10, 20, 30, 45]
+
+    // MARK: Feedback
+    //
+    // One consistent set of taps. Touch is the fastest feedback the brain can
+    // read, which is why every meaningful action here has a haptic.
+
+    /// Bumped on every tap so the shell can fire `sensoryFeedback`.
+    var hapticCount = 0
+
+    /// The most recent tap, read by the shell to choose the sensation.
+    private(set) var lastHaptic: PhoneFreeHaptic?
+
+    func play(_ haptic: PhoneFreeHaptic) {
+        lastHaptic = haptic
+        hapticCount += 1
+    }
 
     // MARK: State
 
@@ -309,6 +338,8 @@ final class PhoneFreeStore {
     private func startGoal(minutes: Int, note: String) {
         guard !goalActive else { return }
 
+        play(.medium)
+
         let now = Date()
         let end = now.addingTimeInterval(TimeInterval(minutes * 60))
 
@@ -387,11 +418,13 @@ final class PhoneFreeStore {
     /// ending anything.
     func requestEndGoal() {
         guard goalActive else { return }
+        play(.light)
         showingPromiseGate = true
     }
 
     /// "Keep going" — dismiss the promise gate and carry on.
     func keepGoing() {
+        play(.success)
         showingPromiseGate = false
     }
 
@@ -399,14 +432,17 @@ final class PhoneFreeStore {
     func breakPromise() {
         guard goalActive, let start = goalStart else { return }
 
+        play(.medium)
+
         let now = Date()
+        let protected = max(0, now.timeIntervalSince(start))
 
         events.append(
             PhoneFreeEvent(
                 timestamp: now,
                 kind: PhoneFreeEventKind.goalEnded,
                 note: "Ended early",
-                duration: max(0, now.timeIntervalSince(start))
+                duration: protected
             )
         )
 
@@ -419,6 +455,10 @@ final class PhoneFreeStore {
         // since the app is open, it is held at zero until they put it down.
         usage.restart(at: now)
         usage.beginUse(at: now)
+
+        // The time protected before they stopped still earns free time. Effort
+        // is never thrown away — that is the whole point of reward over shame.
+        award(usage.creditSurplus(protected))
 
         save()
 
@@ -434,20 +474,26 @@ final class PhoneFreeStore {
     func finishExpiredGoalIfNeeded() {
         guard goalActive, let end = goalEnd, Date() >= end else { return }
 
+        play(.success)
+
         let start = goalStart ?? end
+        let protected = end.timeIntervalSince(start)
 
         events.append(
             PhoneFreeEvent(
                 timestamp: end,
                 kind: PhoneFreeEventKind.goalCompleted,
-                note: "\(max(1, Int((end.timeIntervalSince(start) / 60).rounded())))-minute goal",
-                duration: end.timeIntervalSince(start)
+                note: "\(max(1, Int((protected / 60).rounded())))-minute goal",
+                duration: protected
             )
         )
 
         goalActive = false
         goalStart = nil
         goalEnd = nil
+
+        // Finishing the goal banks free phone time, one minute for one.
+        award(usage.creditSurplus(protected))
 
         // Deliberately *not* moving `lastCheckIn` here. The user has not
         // touched the phone yet — that is the moment the check-in gate should
@@ -471,12 +517,63 @@ final class PhoneFreeStore {
         PhoneFreeGoalNudges.schedule(start: start, end: end)
     }
 
+    // MARK: - Surplus
+    //
+    // Free phone time earned by finishing phone-free goals. While it lasts it
+    // pays for phone use past the grace period, so the counter stays frozen and
+    // the streak survives. The reward is deliberately immediate and visible —
+    // that is what makes it work for an ADHD brain.
+
+    /// A just-earned amount, shown as a lime "＋N min" banner until it fades.
+    /// `nil` when nothing was just earned.
+    var surplusAward: TimeInterval?
+
+    @ObservationIgnored private var surplusAwardToken = 0
+
+    /// Free phone time banked, in seconds.
+    var surplusSeconds: TimeInterval { usage.surplus }
+
+    /// Free time left once the open session's use is paid for.
+    func surplusRemaining(at date: Date = Date()) -> TimeInterval {
+        usage.surplusRemaining(at: date)
+    }
+
+    /// `true` while banked free time is shielding the current session.
+    func isShielded(at date: Date = Date()) -> Bool {
+        usage.isShielded(at: date)
+    }
+
+    /// The bank's ceiling, in seconds — for the "full" indication in the UI.
+    var surplusCap: TimeInterval { PhoneFreeUsage.maxSurplus }
+
+    /// Shows the "＋N min free time" banner and clears it a few seconds later.
+    private func award(_ seconds: TimeInterval) {
+        guard seconds >= 60 else { return }
+
+        let wholeMinutes = max(1, Int((seconds / 60).rounded()))
+        surplusAward = TimeInterval(wholeMinutes * 60)
+        surplusAwardToken += 1
+        let token = surplusAwardToken
+
+        Task { @MainActor in
+            try? await Task.sleep(for: .seconds(4))
+            guard surplusAwardToken == token else { return }
+            surplusAward = nil
+        }
+    }
+
+    func dismissSurplusAward() {
+        surplusAwardToken += 1
+        surplusAward = nil
+    }
+
     // MARK: - Check-in gate
 
     /// "Use it anyway" — the gate goes, and the grace period that began when
     /// the app opened keeps running. Nothing is reset yet: the reset happens
     /// only if they are still on the phone when it runs out.
     func confirmPhoneUse() {
+        play(.light)
         showingCheckInGate = false
     }
 
@@ -484,6 +581,7 @@ final class PhoneFreeStore {
     /// phone is still in their hand. The counter carries on the moment they
     /// lock it or leave the app, inside the grace period.
     func putItDown() {
+        play(.light)
         showingCheckInGate = false
     }
 
@@ -516,6 +614,7 @@ final class PhoneFreeStore {
     }
 
     func clearPlan() {
+        play(.light)
         plan = []
         save()
     }
@@ -856,6 +955,8 @@ final class PhoneFreeStore {
         goalStart = nil
         goalEnd = nil
         usage.restart(at: Date())
+        usage.surplus = 0
+        surplusAward = nil
 
         save()
         PhoneFreeLiveActivityManager.shared.end()
@@ -874,6 +975,8 @@ final class PhoneFreeStore {
         goalStart = nil
         goalEnd = nil
         usage.restart(at: Date())
+        usage.surplus = 0
+        surplusAward = nil
 
         save()
         PhoneFreeLiveActivityManager.shared.end()

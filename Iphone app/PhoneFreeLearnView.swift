@@ -321,6 +321,17 @@ struct PhoneFreeLearnView: View {
             .navigationDestination(for: PhoneFreeLearnTopic.self) { topic in
                 PhoneFreeLearnDetail(topic: topic)
             }
+            // The confirmation is a courtesy, not a state to dwell on. Let it
+            // fade on its own so nothing new is waiting to be dismissed.
+            .task(id: addedActivity) {
+                guard addedActivity != nil else { return }
+
+                try? await Task.sleep(for: .seconds(3))
+
+                withAnimation {
+                    addedActivity = nil
+                }
+            }
         }
     }
 
@@ -403,9 +414,17 @@ struct PhoneFreeLearnView: View {
                     )
                     store.save()
 
+                    store.play(.light)
+
                     withAnimation {
                         addedActivity = activity.name
                     }
+
+                    AccessibilityNotification
+                        .Announcement(
+                            "Added \(activity.name) to your plan"
+                        )
+                        .post()
                 } label: {
                     Image(systemName: "plus")
                         .scaledFont(14, weight: .bold, relativeTo: .subheadline)

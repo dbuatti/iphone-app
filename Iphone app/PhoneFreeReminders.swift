@@ -43,64 +43,122 @@ enum PhoneFreeUseReminders {
         )
     }
 
-    /// One reminder every 15 seconds through the grace period, then one that
-    /// says the reset happened. Timed from when the session began, so a late
-    /// call never stretches the grace period.
+    /// One nudge every 15 seconds through the base grace, then a few spaced
+    /// ones if banked free time is paying for the session, then one that says
+    /// the reset happened.
+    ///
+    /// Delays are measured from *this* moment, not from when the session
+    /// began. PhoneFree is often open for a while before the user moves to
+    /// another app, and a reminder anchored to the session's start would
+    /// already be in the past and never arrive.
     static func schedule(for state: PhoneFreeUsage.State, now: Date = Date()) {
         guard let usingSince = state.usingSince else { return }
 
         cancel()
 
+        guard let resetsAt = state.resetsAt else { return }
+
         let center = UNUserNotificationCenter.current()
         let streak = PhoneFreeFormat.clock(state.frozenInterval)
         let hasStreak = state.frozenInterval >= 60
+        let baseEnd = usingSince.addingTimeInterval(state.resetAfter)
 
-        var offset = PhoneFreeUsage.reminderInterval
         var index = 0
 
-        while offset <= state.resetAfter {
-            let fireAt = usingSince.addingTimeInterval(offset)
-            let delay = fireAt.timeIntervalSince(now)
+        func add(delay: TimeInterval, title: String, body: String) {
+            guard delay > 0, index < maxReminders else { return }
 
-            if delay > 0 {
-                let remaining = state.resetAfter - offset
-                let content = UNMutableNotificationContent()
+            let content = UNMutableNotificationContent()
+            content.title = title
+            content.body = body
+            content.categoryIdentifier = categoryID
+            content.threadIdentifier = "pf_use"
+            content.interruptionLevel = .active
 
-                if remaining > 0 {
-                    // A question and one concrete thing to do — never a
-                    // judgement. Shame is what keeps people scrolling.
-                    content.title = "Do you still want to be on your phone?"
-                    content.body = (hasStreak
-                        ? "Your \(streak) resets in "
-                        : "Your timer resets in ")
-                        + "\(PhoneFreeUsage.shortSeconds(remaining)). "
-                        + "Lock your phone to keep it."
-                } else {
-                    content.title = "Your timer started again"
-                    content.body = "That's okay. It counts up again from the "
-                        + "moment you put your phone down."
-                }
-
-                content.categoryIdentifier = categoryID
-                content.threadIdentifier = "pf_use"
-                content.interruptionLevel = .active
-
-                center.add(
-                    UNNotificationRequest(
-                        identifier: requestPrefix + "\(index)",
-                        content: content,
-                        trigger: UNTimeIntervalNotificationTrigger(
-                            timeInterval: delay,
-                            repeats: false
-                        )
+            center.add(
+                UNNotificationRequest(
+                    identifier: requestPrefix + "\(index)",
+                    content: content,
+                    trigger: UNTimeIntervalNotificationTrigger(
+                        timeInterval: delay,
+                        repeats: false
                     )
                 )
-            }
+            )
 
-            offset += PhoneFreeUsage.reminderInterval
             index += 1
         }
+
+        // Already past the whole shield: the streak is gone, so there is no
+        // countdown left to run — just one nudge to put the phone down.
+        guard resetsAt > now else {
+            add(
+                delay: PhoneFreeUsage.reminderInterval,
+                title: "Your timer started again",
+                body: "That's okay. Put your phone down and it counts up "
+                    + "from there."
+            )
+            return
+        }
+
+        // Urgent: the base grace, every 15 seconds. This is the countdown
+        // that is most likely to be seen.
+        var fireAt = now.addingTimeInterval(PhoneFreeUsage.reminderInterval)
+
+        while fireAt < min(resetsAt, baseEnd), index < maxReminders - 1 {
+            let remaining = resetsAt.timeIntervalSince(fireAt)
+
+            // A question and one concrete thing to do — never a judgement.
+            // Shame is what keeps people scrolling.
+            add(
+                delay: fireAt.timeIntervalSince(now),
+                title: "Do you still want to be on your phone?",
+                body: (hasStreak
+                    ? "Your \(streak) resets in "
+                    : "Your timer resets in ")
+                    + "\(PhoneFreeUsage.shortSeconds(remaining)). "
+                    + "Lock your phone to keep it."
+            )
+
+            fireAt = fireAt.addingTimeInterval(PhoneFreeUsage.reminderInterval)
+        }
+
+        // Shielded: earned free time is paying for the session. Spaced out,
+        // so a banked hour never turns into an hour of notifications.
+        if resetsAt > baseEnd {
+            var shieldAt = max(baseEnd, now)
+                .addingTimeInterval(shieldInterval)
+
+            while shieldAt < resetsAt, index < maxReminders - 1 {
+                let left = resetsAt.timeIntervalSince(shieldAt)
+
+                add(
+                    delay: shieldAt.timeIntervalSince(now),
+                    title: "Free time protecting your streak",
+                    body: "\(PhoneFreeUsage.shortSeconds(left)) of banked free "
+                        + "time left. Put your phone down to keep "
+                        + "what's left."
+                )
+
+                shieldAt = shieldAt.addingTimeInterval(shieldInterval)
+            }
+        }
+
+        // The reset itself, right on the second.
+        add(
+            delay: resetsAt.timeIntervalSince(now),
+            title: "Your timer started again",
+            body: "That's okay. It counts up again from the moment you put "
+                + "your phone down."
+        )
     }
+
+    /// Enough to cover the grace and a shielded session without ever crowding
+    /// iOS's 64 pending-notification limit.
+    private static let maxReminders = 14
+
+    /// How far apart the "free time is paying" reminders sit.
+    private static let shieldInterval: TimeInterval = 5 * 60
 
     static func cancel() {
         let ids = (0...20).map { requestPrefix + "\($0)" }

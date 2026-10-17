@@ -10,27 +10,34 @@
 import SwiftUI
 
 enum PhoneFreeTheme {
-    /// Deep navy behind everything.
-    static let background = Color(red: 0.055, green: 0.065, blue: 0.12)
+    /// Near-black indigo behind everything. Dark enough that the violet and
+    /// lime both sit on it with room to spare.
+    static let background = Color(red: 0.043, green: 0.039, blue: 0.086)
 
-    /// Mint — the "you're doing the right thing" colour.
-    static let accent = Color(red: 0.65, green: 0.91, blue: 0.79)
+    /// Electric violet — the app's "act" colour, and its voice. Used for the
+    /// one primary button, live counters, and live status.
+    static let accent = Color(red: 0.62, green: 0.49, blue: 1.0)
+
+    /// Electric lime — reserved for *earned* things: surplus, finished goals,
+    /// records. Because it appears nowhere else, seeing lime always means "you
+    /// gained something", which is exactly the feedback ADHD brains hold onto.
+    static let reward = Color(red: 0.76, green: 1.0, blue: 0.34)
 
     /// Secondary text.
-    static let muted = Color(red: 0.62, green: 0.65, blue: 0.74)
+    static let muted = Color(red: 0.62, green: 0.60, blue: 0.75)
 
     /// Soft coral for the rare destructive action (deleting data). Never used
     /// for the user's own choices — ending a goal early is not an error.
-    static let caution = Color(red: 0.93, green: 0.55, blue: 0.55)
+    static let caution = Color(red: 0.98, green: 0.49, blue: 0.60)
 
     /// Raised surface (cards).
-    static let card = Color.white.opacity(0.05)
+    static let card = Color.white.opacity(0.06)
 
     /// Hairline around cards.
-    static let cardBorder = Color.white.opacity(0.08)
+    static let cardBorder = Color.white.opacity(0.10)
 
     /// Larger surface for grouped content.
-    static let surface = Color.white.opacity(0.035)
+    static let surface = Color.white.opacity(0.04)
 
     static let cornerRadius: CGFloat = 16
     static let screenPadding: CGFloat = 20
@@ -172,7 +179,7 @@ struct PhoneFreeSectionLabel: View {
     }
 }
 
-/// The app's one primary button shape. Filled mint — reserved for the single
+/// The app's one primary button shape. Filled violet — reserved for the single
 /// most important action on a screen, so "what do I do here?" is never a
 /// question.
 struct PhoneFreePrimaryButton: View {
@@ -261,6 +268,54 @@ enum PhoneFreeFormat {
         }
 
         return String(format: "%d:%02d", minutes, remainder)
+    }
+
+    /// "04:12", "1:02:03" — the zero-padded style the friction gates use,
+    /// so the big number never changes width as it counts down.
+    static func paddedClock(_ interval: TimeInterval) -> String {
+        let seconds = max(0, Int(interval))
+        let hours = seconds / 3600
+        let minutes = (seconds % 3600) / 60
+        let remainder = seconds % 60
+
+        if hours > 0 {
+            return String(
+                format: "%d:%02d:%02d",
+                hours,
+                minutes,
+                remainder
+            )
+        }
+
+        return String(format: "%02d:%02d", minutes, remainder)
+    }
+
+    /// "12 minutes 5 seconds", "1 hour 3 minutes" — for VoiceOver, where a
+    /// clock string like "12:05" would be read as a time of day.
+    static func spoken(_ interval: TimeInterval) -> String {
+        let seconds = max(0, Int(interval.rounded()))
+        let hours = seconds / 3600
+        let minutes = (seconds % 3600) / 60
+        let remainder = seconds % 60
+
+        var parts: [String] = []
+
+        if hours > 0 {
+            parts.append("\(hours) \(hours == 1 ? "hour" : "hours")")
+        }
+
+        if minutes > 0 {
+            parts.append("\(minutes) \(minutes == 1 ? "minute" : "minutes")")
+        }
+
+        // Seconds only matter under a minute; above that they are noise.
+        if parts.isEmpty {
+            parts.append(
+                "\(remainder) \(remainder == 1 ? "second" : "seconds")"
+            )
+        }
+
+        return parts.joined(separator: " ")
     }
 
     /// "45m", "2h 10m", "3h" — for totals, not live counters.

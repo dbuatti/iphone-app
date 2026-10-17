@@ -66,6 +66,20 @@ struct ContentView: View {
         }
         .environment(store)
         .preferredColorScheme(.dark)
+        .sensoryFeedback(trigger: store.hapticCount) { _, _ in
+            switch store.lastHaptic {
+            case .selection:
+                return .selection
+            case .light:
+                return .impact(weight: .light)
+            case .medium:
+                return .impact(weight: .medium)
+            case .success:
+                return .success
+            case nil:
+                return nil
+            }
+        }
         .task {
             store.handleBecameActive()
             store.syncLockScreenCounter()
