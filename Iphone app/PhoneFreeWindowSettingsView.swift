@@ -15,6 +15,7 @@ import SwiftUI
 struct PhoneFreeWindowSettingsView: View {
     @Environment(PhoneFreeStore.self) private var store
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     @State private var windows: [PhoneFreeWindow] = []
     @State private var showingEditor = false
@@ -91,7 +92,7 @@ struct PhoneFreeWindowSettingsView: View {
         PhoneFreeCard {
             VStack(alignment: .leading, spacing: 6) {
                 Text("A reminder, not a lock")
-                    .font(.system(size: 14, weight: .semibold))
+                    .scaledFont(14, weight: .semibold, relativeTo: .subheadline)
                     .foregroundStyle(.white)
 
                 Text(
@@ -100,7 +101,7 @@ struct PhoneFreeWindowSettingsView: View {
                     + "does not block anything itself — the next step for "
                     + "that is Screen Time."
                 )
-                .font(.system(size: 12))
+                .font(.caption)
                 .foregroundStyle(PhoneFreeTheme.muted)
                 .fixedSize(horizontal: false, vertical: true)
             }
@@ -111,7 +112,7 @@ struct PhoneFreeWindowSettingsView: View {
         PhoneFreeCard {
             HStack(alignment: .top, spacing: 12) {
                 Image(systemName: remindersOn ? "checkmark.circle" : "bell.slash")
-                    .font(.system(size: 15))
+                    .font(.subheadline)
                     .foregroundStyle(
                         remindersOn
                         ? PhoneFreeTheme.accent
@@ -120,7 +121,7 @@ struct PhoneFreeWindowSettingsView: View {
 
                 VStack(alignment: .leading, spacing: 4) {
                     Text(remindersOn ? "Reminders are on" : "Reminders are off")
-                        .font(.system(size: 13, weight: .semibold))
+                        .font(.footnote.weight(.semibold))
                         .foregroundStyle(.white)
 
                     Text(
@@ -131,7 +132,7 @@ struct PhoneFreeWindowSettingsView: View {
                               + "windows to remind you. You can change this "
                               + "any time in iOS Settings."
                     )
-                    .font(.system(size: 12))
+                    .font(.caption)
                     .foregroundStyle(PhoneFreeTheme.muted)
                     .fixedSize(horizontal: false, vertical: true)
                 }
@@ -147,7 +148,7 @@ struct PhoneFreeWindowSettingsView: View {
                 "No windows yet. Add one below — evening wind-down and lunch "
                 + "are the usual starting points."
             )
-            .font(.system(size: 13))
+            .font(.footnote)
             .foregroundStyle(PhoneFreeTheme.muted)
             .fixedSize(horizontal: false, vertical: true)
         }
@@ -161,13 +162,13 @@ struct PhoneFreeWindowSettingsView: View {
             VStack(alignment: .leading, spacing: 12) {
                 HStack(spacing: 10) {
                     Image(systemName: "clock")
-                        .font(.system(size: 15))
+                        .font(.subheadline)
                         .foregroundStyle(
                             window.enabled ? PhoneFreeTheme.accent : PhoneFreeTheme.muted
                         )
 
                     Text(window.label.isEmpty ? "Phone-free window" : window.label)
-                        .font(.system(size: 15, weight: .medium))
+                        .font(.subheadline.weight(.medium))
                         .foregroundStyle(.white)
 
                     Spacer()
@@ -186,22 +187,22 @@ struct PhoneFreeWindowSettingsView: View {
                 HStack(spacing: 8) {
                     ForEach(["sunset", "sunrise"], id: \.self) { symbol in
                         Image(systemName: symbol)
-                            .font(.system(size: 11))
+                            .font(.caption2)
                             .foregroundStyle(PhoneFreeTheme.muted)
                     }
 
                     Text(window.summary)
-                        .font(.system(size: 13, weight: .medium, design: .rounded))
+                        .font(.system(.footnote, design: .rounded, weight: .medium))
                         .foregroundStyle(PhoneFreeTheme.muted)
                 }
 
                 if !window.enabled {
                     Text("Off — no reminder will be sent.")
-                        .font(.system(size: 11))
+                        .font(.caption2)
                         .foregroundStyle(PhoneFreeTheme.muted.opacity(0.8))
                 }
 
-                HStack(spacing: 8) {
+                PhoneFreeAdaptiveStack(spacing: 8) {
                     PhoneFreeSecondaryButton(
                         title: "Edit",
                         symbol: "pencil"
@@ -219,7 +220,9 @@ struct PhoneFreeWindowSettingsView: View {
                         windows.remove(at: index)
                         windows = windows
                     }
-                    .frame(width: 110)
+                    .frame(
+                        width: dynamicTypeSize.isAccessibilitySize ? nil : 110
+                    )
                 }
             }
         }
@@ -305,12 +308,12 @@ struct PhoneFreeWindowSettingsView: View {
                     Text(editedWindow.isOvernight
                          ? "Runs overnight, ending the next morning."
                          : "Starts and ends on the same day.")
-                        .font(.system(size: 12))
+                        .font(.caption)
                         .foregroundStyle(PhoneFreeTheme.muted)
                 } footer: {
                     Text("Example: 22:00 to 07:00 is overnight, so it is counted "
                          + "as running from tonight until morning.")
-                        .font(.system(size: 11))
+                        .font(.caption2)
                         .foregroundStyle(PhoneFreeTheme.muted.opacity(0.8))
                 }
             }

@@ -19,6 +19,8 @@ struct PhoneFreeAwayView: View {
 
     @State private var showingPlanBuilder = false
 
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+
     var body: some View {
         ScrollView(showsIndicators: false) {
             VStack(spacing: 26) {
@@ -62,12 +64,12 @@ struct PhoneFreeAwayView: View {
         HStack(alignment: .firstTextBaseline) {
             VStack(alignment: .leading, spacing: 4) {
                 Text("PHONEFREE")
-                    .font(.system(size: 12, weight: .bold))
+                    .font(.caption.weight(.bold))
                     .tracking(3)
                     .foregroundStyle(PhoneFreeTheme.accent)
 
                 Text("Make space.")
-                    .font(.system(size: 26, weight: .semibold))
+                    .scaledFont(26, weight: .semibold, relativeTo: .title)
                     .foregroundStyle(.white)
             }
 
@@ -86,19 +88,13 @@ struct PhoneFreeAwayView: View {
                             ? "PAUSED — YOU'RE ON YOUR PHONE"
                             : "SINCE YOU LAST USED YOUR PHONE"
                     )
-                    .font(.system(size: 11, weight: .bold))
+                    .font(.caption2.weight(.bold))
                     .tracking(1.6)
                     .foregroundStyle(PhoneFreeTheme.muted)
                     .multilineTextAlignment(.center)
 
                     Text(PhoneFreeFormat.clock(store.awayInterval(at: context.date)))
-                        .font(
-                            .system(
-                                size: 64,
-                                weight: .light,
-                                design: .rounded
-                            )
-                        )
+                        .scaledFont(64, weight: .light, design: .rounded, relativeTo: .largeTitle)
                         .monospacedDigit()
                         .minimumScaleFactor(0.5)
                         .lineLimit(1)
@@ -114,6 +110,7 @@ struct PhoneFreeAwayView: View {
             }
         }
         .frame(maxWidth: .infinity)
+        .padding(.horizontal, 18)
         .padding(.vertical, 26)
         .background(PhoneFreeTheme.card)
         .clipShape(
@@ -136,7 +133,7 @@ struct PhoneFreeAwayView: View {
     private var activeGoalHero: some View {
         VStack(spacing: 16) {
             Text("TIME LEFT IN YOUR PHONE-FREE GOAL")
-                .font(.system(size: 11, weight: .bold))
+                .font(.caption2.weight(.bold))
                 .tracking(1.6)
                 .foregroundStyle(PhoneFreeTheme.muted)
                 .multilineTextAlignment(.center)
@@ -167,20 +164,14 @@ struct PhoneFreeAwayView: View {
                                     store.goalRemaining(at: context.date)
                                 )
                             )
-                            .font(
-                                .system(
-                                    size: 40,
-                                    weight: .light,
-                                    design: .rounded
-                                )
-                            )
+                            .scaledFont(40, weight: .light, design: .rounded, relativeTo: .largeTitle)
                             .monospacedDigit()
-                            .minimumScaleFactor(0.6)
+                            .minimumScaleFactor(0.4)
                             .lineLimit(1)
                             .foregroundStyle(.white)
 
                             Text("REMAINING")
-                                .font(.system(size: 10, weight: .bold))
+                                .scaledFont(10, weight: .bold, relativeTo: .caption2)
                                 .tracking(1.8)
                                 .foregroundStyle(PhoneFreeTheme.muted)
                         }
@@ -193,7 +184,7 @@ struct PhoneFreeAwayView: View {
                             store.awayInterval(at: context.date)
                         )
                     )
-                    .font(.system(size: 13, weight: .medium))
+                    .font(.footnote.weight(.medium))
                     .foregroundStyle(PhoneFreeTheme.accent)
 
                     gapTargetBlock(at: context.date, compact: true)
@@ -201,6 +192,7 @@ struct PhoneFreeAwayView: View {
             }
         }
         .frame(maxWidth: .infinity)
+        .padding(.horizontal, 18)
         .padding(.vertical, 26)
         .background(PhoneFreeTheme.card)
         .clipShape(
@@ -229,22 +221,20 @@ struct PhoneFreeAwayView: View {
     private func gapTargetBlock(at date: Date, compact: Bool) -> some View {
         VStack(spacing: 9) {
             if let target = store.nextGapTarget(at: date) {
-                HStack(alignment: .firstTextBaseline) {
+                PhoneFreeAdaptiveStack(
+                    spacing: 0,
+                    horizontalAlignment: .center,
+                    verticalAlignment: .firstTextBaseline
+                ) {
                     Text("NEXT TARGET")
-                        .font(.system(size: 10, weight: .bold))
+                        .scaledFont(10, weight: .bold, relativeTo: .caption2)
                         .tracking(1.4)
                         .foregroundStyle(PhoneFreeTheme.muted)
 
                     Spacer(minLength: 8)
 
                     Text(PhoneFreeTargets.short(target))
-                        .font(
-                            .system(
-                                size: 15,
-                                weight: .semibold,
-                                design: .rounded
-                            )
-                        )
+                        .font(.system(.subheadline, design: .rounded, weight: .semibold))
                         .monospacedDigit()
                         .foregroundStyle(.white)
                 }
@@ -256,7 +246,7 @@ struct PhoneFreeAwayView: View {
                 VStack(spacing: 4) {
                     if let remaining = store.gapTimeToTarget(at: date) {
                         Text("\(PhoneFreeTargets.short(remaining)) to go")
-                            .font(.system(size: 12, weight: .medium))
+                            .font(.caption.weight(.medium))
                             .foregroundStyle(PhoneFreeTheme.muted)
                     }
 
@@ -267,7 +257,7 @@ struct PhoneFreeAwayView: View {
                     "You have climbed the whole ladder. Anything from here "
                     + "is a bonus."
                 )
-                .font(.system(size: 12, weight: .medium))
+                .font(.caption.weight(.medium))
                 .foregroundStyle(PhoneFreeTheme.accent)
                 .multilineTextAlignment(.center)
                 .fixedSize(horizontal: false, vertical: true)
@@ -303,14 +293,14 @@ struct PhoneFreeAwayView: View {
 
                 Text("New record — your longest stretch yet.")
             }
-            .font(.system(size: 12, weight: .semibold))
+            .font(.caption.weight(.semibold))
             .foregroundStyle(PhoneFreeTheme.accent)
         } else if store.bestCompletedGapEver > 0 {
             Text(
                 "Your record "
                 + PhoneFreeFormat.clock(store.bestCompletedGapEver)
             )
-            .font(.system(size: 12, weight: .medium))
+            .font(.caption.weight(.medium))
             .foregroundStyle(PhoneFreeTheme.muted)
         }
     }
@@ -322,9 +312,10 @@ struct PhoneFreeAwayView: View {
             TimelineView(.periodic(from: .now, by: 1)) { context in
                 if let current = store.currentActivity(at: context.date) {
                     PhoneFreeCard {
-                        HStack(spacing: 14) {
+                        PhoneFreeAdaptiveStack(spacing: 14) {
                             Image(systemName: current.activity.symbol)
-                                .font(.system(size: 18))
+                                .scaledFont(18, relativeTo: .title3)
+                                .dynamicTypeSize(...DynamicTypeSize.xxxLarge)
                                 .foregroundStyle(PhoneFreeTheme.background)
                                 .frame(width: 40, height: 40)
                                 .background(PhoneFreeTheme.accent)
@@ -332,14 +323,14 @@ struct PhoneFreeAwayView: View {
 
                             VStack(alignment: .leading, spacing: 3) {
                                 Text("DOING RIGHT NOW")
-                                    .font(.system(size: 10, weight: .bold))
+                                    .scaledFont(10, weight: .bold, relativeTo: .caption2)
                                     .tracking(1.2)
                                     .foregroundStyle(
                                         PhoneFreeTheme.muted
                                     )
 
                                 Text(current.activity.name)
-                                    .font(.system(size: 17, weight: .semibold))
+                                    .font(.headline)
                                     .foregroundStyle(.white)
                             }
 
@@ -348,7 +339,7 @@ struct PhoneFreeAwayView: View {
                             Text(
                                 "\(max(1, Int(ceil(current.end.timeIntervalSince(context.date) / 60)))) min"
                             )
-                            .font(.system(size: 15, weight: .semibold))
+                            .font(.subheadline.weight(.semibold))
                             .foregroundStyle(PhoneFreeTheme.accent)
                         }
                     }
@@ -358,7 +349,7 @@ struct PhoneFreeAwayView: View {
             PhoneFreeCard {
                 VStack(alignment: .leading, spacing: 6) {
                     Text("Your promise")
-                        .font(.system(size: 15, weight: .semibold))
+                        .font(.subheadline.weight(.semibold))
                         .foregroundStyle(.white)
 
                     Text(
@@ -369,7 +360,7 @@ struct PhoneFreeAwayView: View {
                         )
                         + ". You don't need to check anything right now."
                     )
-                    .font(.system(size: 13))
+                    .font(.footnote)
                     .foregroundStyle(PhoneFreeTheme.muted)
                     .fixedSize(horizontal: false, vertical: true)
                 }
@@ -392,7 +383,7 @@ struct PhoneFreeAwayView: View {
 
             VStack(alignment: .leading, spacing: 10) {
                 Text("How long?")
-                    .font(.system(size: 14, weight: .medium))
+                    .scaledFont(14, weight: .medium, relativeTo: .subheadline)
                     .foregroundStyle(.white)
 
                 minuteChips
@@ -412,7 +403,7 @@ struct PhoneFreeAwayView: View {
 
                 Text("Then lock your screen. The countdown keeps going on "
                      + "your Lock Screen.")
-                    .font(.system(size: 12))
+                    .font(.caption)
                     .foregroundStyle(PhoneFreeTheme.muted)
                     .multilineTextAlignment(.center)
                     .fixedSize(horizontal: false, vertical: true)
@@ -430,7 +421,19 @@ struct PhoneFreeAwayView: View {
     }
 
     private var minuteChips: some View {
-        HStack(spacing: 9) {
+        // One row normally; wraps onto a second row at the larger
+        // accessibility text sizes so the numbers stay readable.
+        let columns = dynamicTypeSize.isAccessibilitySize
+            ? 3
+            : store.goalOptions.count
+
+        return LazyVGrid(
+            columns: Array(
+                repeating: GridItem(.flexible(), spacing: 9),
+                count: columns
+            ),
+            spacing: 9
+        ) {
             ForEach(store.goalOptions, id: \.self) { minutes in
                 let selected = !store.plan.isEmpty
                     ? false
@@ -442,17 +445,18 @@ struct PhoneFreeAwayView: View {
                 } label: {
                     VStack(spacing: 4) {
                         Text("\(minutes)")
-                            .font(.system(size: 18, weight: .semibold))
+                            .scaledFont(18, weight: .semibold, relativeTo: .title3)
 
                         Text("MIN")
-                            .font(.system(size: 9, weight: .bold))
+                            .scaledFont(9, weight: .bold, relativeTo: .caption2)
                             .tracking(1)
                     }
                     .foregroundStyle(
                         selected ? PhoneFreeTheme.background : .white
                     )
                     .frame(maxWidth: .infinity)
-                    .frame(height: 62)
+                    .padding(.vertical, 10)
+                    .frame(minHeight: 62)
                     .background(
                         selected
                             ? PhoneFreeTheme.accent
@@ -485,13 +489,13 @@ struct PhoneFreeAwayView: View {
 
     private var planStep: some View {
         VStack(alignment: .leading, spacing: 10) {
-            HStack(spacing: 6) {
+            PhoneFreeAdaptiveStack(spacing: 6) {
                 Text("Something to do instead")
-                    .font(.system(size: 14, weight: .medium))
+                    .scaledFont(14, weight: .medium, relativeTo: .subheadline)
                     .foregroundStyle(.white)
 
                 Text("optional")
-                    .font(.system(size: 10, weight: .bold))
+                    .scaledFont(10, weight: .bold, relativeTo: .caption2)
                     .tracking(0.8)
                     .foregroundStyle(PhoneFreeTheme.muted)
                     .padding(.horizontal, 7)
@@ -510,7 +514,7 @@ struct PhoneFreeAwayView: View {
 
                 Text("A plan sets the goal's length and shows you what to do "
                      + "while your phone is away, one step at a time.")
-                    .font(.system(size: 12))
+                    .font(.caption)
                     .foregroundStyle(PhoneFreeTheme.muted)
                     .fixedSize(horizontal: false, vertical: true)
             } else {
@@ -519,7 +523,8 @@ struct PhoneFreeAwayView: View {
                         if let activity = planned.activity {
                             HStack(spacing: 12) {
                                 Image(systemName: activity.symbol)
-                                    .font(.system(size: 14))
+                                    .scaledFont(14, relativeTo: .subheadline)
+                                    .dynamicTypeSize(...DynamicTypeSize.xxxLarge)
                                     .foregroundStyle(
                                         PhoneFreeTheme.background
                                     )
@@ -528,20 +533,20 @@ struct PhoneFreeAwayView: View {
                                     .clipShape(Circle())
 
                                 Text(activity.name)
-                                    .font(.system(size: 15, weight: .medium))
+                                    .font(.subheadline.weight(.medium))
                                     .foregroundStyle(.white)
 
                                 Spacer()
 
                                 Text("\(planned.minutes) min")
-                                    .font(.system(size: 14, weight: .semibold))
+                                    .scaledFont(14, weight: .semibold, relativeTo: .subheadline)
                                     .foregroundStyle(PhoneFreeTheme.accent)
                             }
                         }
                     }
                 }
 
-                HStack(spacing: 10) {
+                PhoneFreeAdaptiveStack(spacing: 10) {
                     PhoneFreeSecondaryButton(
                         title: "Edit plan",
                         symbol: "slider.horizontal.3"
@@ -552,7 +557,9 @@ struct PhoneFreeAwayView: View {
                     PhoneFreeSecondaryButton(title: "Remove") {
                         store.clearPlan()
                     }
-                    .frame(width: 110)
+                    .frame(
+                        width: dynamicTypeSize.isAccessibilitySize ? nil : 110
+                    )
                 }
             }
         }
@@ -561,7 +568,7 @@ struct PhoneFreeAwayView: View {
     // MARK: - Today
 
     private var todaySummary: some View {
-        HStack(spacing: 12) {
+        PhoneFreeAdaptiveStack(spacing: 12) {
             statCard(
                 value: "\(store.pickupsToday)",
                 label: "TIMES YOU OPENED PHONEFREE",
@@ -586,18 +593,17 @@ struct PhoneFreeAwayView: View {
         PhoneFreeCard {
             VStack(alignment: .leading, spacing: 10) {
                 Image(systemName: symbol)
-                    .font(.system(size: 16))
+                    .font(.callout)
                     .foregroundStyle(PhoneFreeTheme.accent)
 
                 Text(value)
-                    .font(.system(size: 26, weight: .medium, design: .rounded))
+                    .scaledFont(26, weight: .medium, design: .rounded, relativeTo: .title)
                     .foregroundStyle(.white)
 
                 Text(label)
-                    .font(.system(size: 9, weight: .bold))
+                    .scaledFont(9, weight: .bold, relativeTo: .caption2)
                     .tracking(0.9)
                     .foregroundStyle(PhoneFreeTheme.muted)
-                    .lineLimit(2)
                     .fixedSize(horizontal: false, vertical: true)
             }
         }
@@ -625,7 +631,7 @@ struct PhoneFreeAwayView: View {
                                 ? "arrow.counterclockwise"
                                 : "hourglass.bottomhalf.filled"
                         )
-                        .font(.system(size: 15))
+                        .font(.subheadline)
                         .foregroundStyle(PhoneFreeTheme.accent)
 
                         VStack(alignment: .leading, spacing: 4) {
@@ -635,7 +641,7 @@ struct PhoneFreeAwayView: View {
                                     : "Timer resets in "
                                         + PhoneFreeUsage.shortSeconds(left)
                             )
-                            .font(.system(size: 15, weight: .semibold))
+                            .font(.subheadline.weight(.semibold))
                             .monospacedDigit()
                             .foregroundStyle(.white)
 
@@ -653,7 +659,7 @@ struct PhoneFreeAwayView: View {
                                                 + " carries on."
                                             : "it carries on.")
                             )
-                            .font(.system(size: 12))
+                            .font(.caption)
                             .foregroundStyle(PhoneFreeTheme.muted)
                             .fixedSize(horizontal: false, vertical: true)
                         }
@@ -671,10 +677,12 @@ struct PhoneFreeAwayView: View {
                             store.putItDown()
                         } label: {
                             Text("I'll put it down")
-                                .font(.system(size: 15, weight: .semibold))
+                                .font(.subheadline.weight(.semibold))
+                                .multilineTextAlignment(.center)
                                 .foregroundStyle(PhoneFreeTheme.background)
                                 .frame(maxWidth: .infinity)
-                                .frame(height: 46)
+                                .padding(.vertical, 10)
+                                .frame(minHeight: 46)
                                 .background(PhoneFreeTheme.accent)
                                 .clipShape(
                                     RoundedRectangle(

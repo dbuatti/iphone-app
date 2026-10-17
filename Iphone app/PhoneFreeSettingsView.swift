@@ -19,6 +19,9 @@ struct PhoneFreeSettingsView: View {
 
     @Environment(\.openURL) private var openURL
 
+    /// The numbered circles in the Shortcuts steps grow with the text.
+    @ScaledMetric(relativeTo: .caption) private var stepBadgeSize: CGFloat = 20
+
     var body: some View {
         ScrollView(showsIndicators: false) {
             VStack(alignment: .leading, spacing: 24) {
@@ -96,7 +99,7 @@ struct PhoneFreeSettingsView: View {
                         "Using your phone pauses the counter. Still on it after "
                         + "the time below, and it goes back to 0."
                     )
-                    .font(.system(size: 13))
+                    .font(.footnote)
                     .foregroundStyle(PhoneFreeTheme.muted)
                     .fixedSize(horizontal: false, vertical: true)
 
@@ -110,11 +113,11 @@ struct PhoneFreeSettingsView: View {
                     Toggle(isOn: $store.goalNudgesEnabled) {
                         VStack(alignment: .leading, spacing: 2) {
                             Text("Reminders during a goal")
-                                .font(.system(size: 15, weight: .medium))
+                                .font(.subheadline.weight(.medium))
                                 .foregroundStyle(.white)
 
                             Text("A quiet Lock Screen nudge every few minutes.")
-                                .font(.system(size: 12))
+                                .font(.caption)
                                 .foregroundStyle(PhoneFreeTheme.muted)
                         }
                     }
@@ -129,7 +132,7 @@ struct PhoneFreeSettingsView: View {
             PhoneFreeCard {
                 VStack(alignment: .leading, spacing: 12) {
                     Text("Interrupt other apps")
-                        .font(.system(size: 15, weight: .semibold))
+                        .font(.subheadline.weight(.semibold))
                         .foregroundStyle(.white)
 
                     Text(
@@ -138,7 +141,7 @@ struct PhoneFreeSettingsView: View {
                         + "at you open and close, and PhoneFree then counts "
                         + "down with a reminder every 15 seconds."
                     )
-                    .font(.system(size: 12))
+                    .font(.caption)
                     .foregroundStyle(PhoneFreeTheme.muted)
                     .fixedSize(horizontal: false, vertical: true)
 
@@ -162,11 +165,12 @@ struct PhoneFreeSettingsView: View {
                             Image(systemName: "square.2.layers.3d")
 
                             Text("Open Shortcuts")
-                                .font(.system(size: 15, weight: .medium))
+                                .font(.subheadline.weight(.medium))
                         }
                         .foregroundStyle(.white)
                         .frame(maxWidth: .infinity)
-                        .frame(height: 48)
+                        .padding(.vertical, 10)
+                        .frame(minHeight: 48)
                         .background(Color.white.opacity(0.06))
                         .clipShape(
                             RoundedRectangle(
@@ -184,13 +188,13 @@ struct PhoneFreeSettingsView: View {
     private func setupStep(_ number: Int, _ text: String) -> some View {
         HStack(alignment: .top, spacing: 10) {
             Text("\(number)")
-                .font(.system(size: 12, weight: .bold, design: .rounded))
+                .font(.system(.caption, design: .rounded, weight: .bold))
                 .foregroundStyle(PhoneFreeTheme.background)
-                .frame(width: 20, height: 20)
+                .frame(width: stepBadgeSize, height: stepBadgeSize)
                 .background(PhoneFreeTheme.accent, in: Circle())
 
             Text(text)
-                .font(.system(size: 13))
+                .font(.footnote)
                 .foregroundStyle(.white)
                 .fixedSize(horizontal: false, vertical: true)
         }
@@ -221,11 +225,12 @@ struct PhoneFreeSettingsView: View {
                         ? "Turn on notifications in Settings"
                         : "Allow reminders"
                 )
-                .font(.system(size: 15, weight: .medium))
+                .font(.subheadline.weight(.medium))
             }
             .foregroundStyle(PhoneFreeTheme.background)
             .frame(maxWidth: .infinity)
-            .frame(height: 48)
+            .padding(.vertical, 10)
+            .frame(minHeight: 48)
             .background(PhoneFreeTheme.accent)
             .clipShape(
                 RoundedRectangle(cornerRadius: 14, style: .continuous)
@@ -239,12 +244,12 @@ struct PhoneFreeSettingsView: View {
     private var header: some View {
         VStack(alignment: .leading, spacing: 4) {
             Text("SETTINGS")
-                .font(.system(size: 12, weight: .bold))
+                .font(.caption.weight(.bold))
                 .tracking(3)
                 .foregroundStyle(PhoneFreeTheme.accent)
 
             Text("How the app behaves")
-                .font(.system(size: 26, weight: .semibold))
+                .scaledFont(26, weight: .semibold, relativeTo: .title)
                 .foregroundStyle(.white)
         }
     }
@@ -259,12 +264,12 @@ struct PhoneFreeSettingsView: View {
                 VStack(alignment: .leading, spacing: 14) {
                     HStack(alignment: .top, spacing: 10) {
                         Image(systemName: "hourglass")
-                            .font(.system(size: 16))
+                            .font(.callout)
                             .foregroundStyle(PhoneFreeTheme.accent)
 
                         VStack(alignment: .leading, spacing: 3) {
                             Text("The countdown shows during a goal")
-                                .font(.system(size: 15, weight: .medium))
+                                .font(.subheadline.weight(.medium))
                                 .foregroundStyle(.white)
 
                             Text(
@@ -272,7 +277,7 @@ struct PhoneFreeSettingsView: View {
                                 + "your Lock Screen and Dynamic Island until it "
                                 + "runs out."
                             )
-                            .font(.system(size: 12))
+                            .font(.caption)
                             .foregroundStyle(PhoneFreeTheme.muted)
                             .fixedSize(horizontal: false, vertical: true)
                         }
@@ -284,12 +289,12 @@ struct PhoneFreeSettingsView: View {
 
                     HStack(alignment: .top, spacing: 10) {
                         Image(systemName: "rectangle.3.group")
-                            .font(.system(size: 16))
+                            .font(.callout)
                             .foregroundStyle(PhoneFreeTheme.accent)
 
                         VStack(alignment: .leading, spacing: 3) {
                             Text("The away counter is a widget")
-                                .font(.system(size: 15, weight: .medium))
+                                .font(.subheadline.weight(.medium))
                                 .foregroundStyle(.white)
 
                             Text(
@@ -298,7 +303,7 @@ struct PhoneFreeSettingsView: View {
                                 + "a Live Activity. Long-press your Lock Screen, "
                                 + "tap Customize, and add The Pause."
                             )
-                            .font(.system(size: 12))
+                            .font(.caption)
                             .foregroundStyle(PhoneFreeTheme.muted)
                             .fixedSize(horizontal: false, vertical: true)
                         }
@@ -321,7 +326,7 @@ struct PhoneFreeSettingsView: View {
                         + "your number to a friend and ask them to check in "
                         + "on you."
                     )
-                    .font(.system(size: 13))
+                    .font(.footnote)
                     .foregroundStyle(PhoneFreeTheme.muted)
                     .fixedSize(horizontal: false, vertical: true)
 
@@ -330,11 +335,12 @@ struct PhoneFreeSettingsView: View {
                             Image(systemName: "square.and.arrow.up")
 
                             Text("Share my progress")
-                                .font(.system(size: 15, weight: .medium))
+                                .font(.subheadline.weight(.medium))
                         }
                         .foregroundStyle(PhoneFreeTheme.background)
                         .frame(maxWidth: .infinity)
-                        .frame(height: 48)
+                        .padding(.vertical, 10)
+                        .frame(minHeight: 48)
                         .background(PhoneFreeTheme.accent)
                         .clipShape(
                             RoundedRectangle(
@@ -373,13 +379,13 @@ struct PhoneFreeSettingsView: View {
 
                         VStack(alignment: .leading, spacing: 2) {
                             Text("Scheduled windows & reminders")
-                                .font(.system(size: 15, weight: .medium))
+                                .font(.subheadline.weight(.medium))
                                 .foregroundStyle(.white)
 
                             Text(
                                 "\(store.windows.filter { $0.enabled }.count) active"
                             )
-                            .font(.system(size: 12))
+                            .font(.caption)
                             .foregroundStyle(PhoneFreeTheme.muted)
                         }
 
@@ -403,12 +409,12 @@ struct PhoneFreeSettingsView: View {
             PhoneFreeCard {
                 HStack(alignment: .top, spacing: 12) {
                     Image(systemName: "lock.shield")
-                        .font(.system(size: 16))
+                        .font(.callout)
                         .foregroundStyle(PhoneFreeTheme.muted)
 
                     VStack(alignment: .leading, spacing: 4) {
                         Text("Not switched on yet")
-                            .font(.system(size: 15, weight: .medium))
+                            .font(.subheadline.weight(.medium))
                             .foregroundStyle(.white)
 
                         Text(
@@ -416,7 +422,7 @@ struct PhoneFreeSettingsView: View {
                             + "Screen Time permission, which they grant review "
                             + "-by-review. It's the next thing on the list."
                         )
-                        .font(.system(size: 12))
+                        .font(.caption)
                         .foregroundStyle(PhoneFreeTheme.muted)
                         .fixedSize(horizontal: false, vertical: true)
 
@@ -425,7 +431,7 @@ struct PhoneFreeSettingsView: View {
                             + "closest thing — and putting the phone in "
                             + "another room."
                         )
-                        .font(.system(size: 12))
+                        .font(.caption)
                         .foregroundStyle(PhoneFreeTheme.muted)
                         .fixedSize(horizontal: false, vertical: true)
                         .padding(.top, 2)
@@ -449,7 +455,7 @@ struct PhoneFreeSettingsView: View {
                         "Everything lives on this phone. There's no account and "
                         + "nothing is sent anywhere."
                     )
-                    .font(.system(size: 13))
+                    .font(.footnote)
                     .foregroundStyle(PhoneFreeTheme.muted)
                     .fixedSize(horizontal: false, vertical: true)
 
@@ -460,11 +466,12 @@ struct PhoneFreeSettingsView: View {
                             Image(systemName: "arrow.counterclockwise")
 
                             Text("Start today again")
-                                .font(.system(size: 15, weight: .medium))
+                                .font(.subheadline.weight(.medium))
                         }
                         .foregroundStyle(.white)
                         .frame(maxWidth: .infinity)
-                        .frame(height: 48)
+                        .padding(.vertical, 10)
+                        .frame(minHeight: 48)
                         .background(Color.white.opacity(0.06))
                         .clipShape(
                             RoundedRectangle(
@@ -482,11 +489,12 @@ struct PhoneFreeSettingsView: View {
                             Image(systemName: "trash")
 
                             Text("Clear everything")
-                                .font(.system(size: 15, weight: .medium))
+                                .font(.subheadline.weight(.medium))
                         }
                         .foregroundStyle(Color(red: 0.93, green: 0.55, blue: 0.55))
                         .frame(maxWidth: .infinity)
-                        .frame(height: 48)
+                        .padding(.vertical, 10)
+                        .frame(minHeight: 48)
                         .background(Color.white.opacity(0.04))
                         .clipShape(
                             RoundedRectangle(
@@ -510,7 +518,7 @@ struct PhoneFreeSettingsView: View {
             PhoneFreeCard {
                 VStack(alignment: .leading, spacing: 10) {
                     Text("PhoneFree")
-                        .font(.system(size: 16, weight: .semibold))
+                        .font(.callout.weight(.semibold))
                         .foregroundStyle(.white)
 
                     Text(
@@ -518,12 +526,12 @@ struct PhoneFreeSettingsView: View {
                         + "time you get back. Made for people whose brains "
                         + "make this harder than it looks."
                     )
-                    .font(.system(size: 13))
+                    .font(.footnote)
                     .foregroundStyle(PhoneFreeTheme.muted)
                     .fixedSize(horizontal: false, vertical: true)
 
                     Text(appVersion)
-                        .font(.system(size: 12))
+                        .font(.caption)
                         .foregroundStyle(PhoneFreeTheme.muted.opacity(0.7))
                 }
             }

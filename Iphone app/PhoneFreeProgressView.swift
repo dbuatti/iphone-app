@@ -45,12 +45,12 @@ struct PhoneFreeProgressView: View {
     private var header: some View {
         VStack(alignment: .leading, spacing: 4) {
             Text("PROGRESS")
-                .font(.system(size: 12, weight: .bold))
+                .font(.caption.weight(.bold))
                 .tracking(3)
                 .foregroundStyle(PhoneFreeTheme.accent)
 
             Text("What you've protected")
-                .font(.system(size: 26, weight: .semibold))
+                .scaledFont(26, weight: .semibold, relativeTo: .title)
                 .foregroundStyle(.white)
         }
     }
@@ -59,15 +59,17 @@ struct PhoneFreeProgressView: View {
 
     private var runCard: some View {
         PhoneFreeCard(padding: 18) {
-            HStack(spacing: 16) {
+            PhoneFreeAdaptiveStack(spacing: 16) {
                 ZStack {
                     Circle()
                         .fill(PhoneFreeTheme.accent.opacity(0.15))
 
                     Text("\(store.goalRunDays)")
-                        .font(
-                            .system(size: 28, weight: .semibold, design: .rounded)
-                        )
+                        .font(.system(.title, design: .rounded, weight: .semibold))
+                        .dynamicTypeSize(...DynamicTypeSize.xxxLarge)
+                        .minimumScaleFactor(0.5)
+                        .lineLimit(1)
+                        .padding(.horizontal, 6)
                         .foregroundStyle(PhoneFreeTheme.accent)
                 }
                 .frame(width: 64, height: 64)
@@ -78,11 +80,11 @@ struct PhoneFreeProgressView: View {
                             ? "1-day run"
                             : "\(store.goalRunDays)-day run"
                     )
-                    .font(.system(size: 18, weight: .semibold))
+                    .scaledFont(18, weight: .semibold, relativeTo: .title3)
                     .foregroundStyle(.white)
 
                     Text(runSubtitle)
-                        .font(.system(size: 13))
+                        .font(.footnote)
                         .foregroundStyle(PhoneFreeTheme.muted)
                         .fixedSize(horizontal: false, vertical: true)
                 }
@@ -104,7 +106,7 @@ struct PhoneFreeProgressView: View {
 
     private var statGrid: some View {
         VStack(spacing: 12) {
-            HStack(spacing: 12) {
+            PhoneFreeAdaptiveStack(spacing: 12) {
                 statCard(
                     value: PhoneFreeFormat.duration(
                         store.protectedSecondsToday
@@ -120,7 +122,7 @@ struct PhoneFreeProgressView: View {
                 )
             }
 
-            HStack(spacing: 12) {
+            PhoneFreeAdaptiveStack(spacing: 12) {
                 statCard(
                     value: PhoneFreeFormat.clock(store.bestGapToday),
                     label: "LONGEST PAUSE TODAY",
@@ -137,7 +139,7 @@ struct PhoneFreeProgressView: View {
             PhoneFreeCard {
                 HStack(spacing: 14) {
                     Image(systemName: "trophy")
-                        .font(.system(size: 16))
+                        .font(.callout)
                         .foregroundStyle(PhoneFreeTheme.accent)
 
                     VStack(alignment: .leading, spacing: 3) {
@@ -145,14 +147,14 @@ struct PhoneFreeProgressView: View {
                             "Longest pause ever: "
                             + PhoneFreeFormat.clock(store.longestGapEver)
                         )
-                        .font(.system(size: 14, weight: .medium))
+                        .scaledFont(14, weight: .medium, relativeTo: .subheadline)
                         .foregroundStyle(.white)
 
                         Text(
                             "Measured between one pickup and the next, "
                             + "including the one running now."
                         )
-                        .font(.system(size: 12))
+                        .font(.caption)
                         .foregroundStyle(PhoneFreeTheme.muted)
                         .fixedSize(horizontal: false, vertical: true)
                     }
@@ -164,12 +166,12 @@ struct PhoneFreeProgressView: View {
             PhoneFreeCard {
                 HStack(alignment: .top, spacing: 12) {
                     Image(systemName: "info.circle")
-                        .font(.system(size: 15))
+                        .font(.subheadline)
                         .foregroundStyle(PhoneFreeTheme.muted)
 
                     VStack(alignment: .leading, spacing: 4) {
                         Text("“Times you opened PhoneFree”")
-                            .font(.system(size: 13, weight: .semibold))
+                            .font(.footnote.weight(.semibold))
                             .foregroundStyle(.white)
 
                         Text(
@@ -180,7 +182,7 @@ struct PhoneFreeProgressView: View {
                             + "Screen Time permission, which this app cannot "
                             + "use yet."
                         )
-                        .font(.system(size: 12))
+                        .font(.caption)
                         .foregroundStyle(PhoneFreeTheme.muted)
                         .fixedSize(horizontal: false, vertical: true)
                     }
@@ -199,20 +201,19 @@ struct PhoneFreeProgressView: View {
         PhoneFreeCard {
             VStack(alignment: .leading, spacing: 10) {
                 Image(systemName: symbol)
-                    .font(.system(size: 16))
+                    .font(.callout)
                     .foregroundStyle(PhoneFreeTheme.accent)
 
                 Text(value)
-                    .font(.system(size: 24, weight: .medium, design: .rounded))
+                    .scaledFont(24, weight: .medium, design: .rounded, relativeTo: .title2)
                     .foregroundStyle(.white)
                     .minimumScaleFactor(0.7)
                     .lineLimit(1)
 
                 Text(label)
-                    .font(.system(size: 9, weight: .bold))
+                    .scaledFont(9, weight: .bold, relativeTo: .caption2)
                     .tracking(0.9)
                     .foregroundStyle(PhoneFreeTheme.muted)
-                    .lineLimit(2)
                     .fixedSize(horizontal: false, vertical: true)
             }
         }
@@ -257,16 +258,16 @@ struct PhoneFreeProgressView: View {
                 } else {
                     VStack(spacing: 6) {
                         Text("No protected time yet")
-                            .font(.system(size: 15, weight: .medium))
+                            .font(.subheadline.weight(.medium))
                             .foregroundStyle(.white)
 
                         Text("Finish a goal and the bar for today will appear.")
-                            .font(.system(size: 12))
+                            .font(.caption)
                             .foregroundStyle(PhoneFreeTheme.muted)
                             .multilineTextAlignment(.center)
                     }
                     .frame(maxWidth: .infinity)
-                    .frame(height: 160)
+                    .frame(minHeight: 160)
                 }
             }
         }
@@ -306,17 +307,17 @@ struct PhoneFreeProgressView: View {
         PhoneFreeCard {
             HStack(spacing: 14) {
                 Image(systemName: symbol)
-                    .font(.system(size: 16))
+                    .font(.callout)
                     .foregroundStyle(PhoneFreeTheme.accent)
                     .frame(width: 26)
 
                 VStack(alignment: .leading, spacing: 3) {
                     Text(title)
-                        .font(.system(size: 14, weight: .medium))
+                        .scaledFont(14, weight: .medium, relativeTo: .subheadline)
                         .foregroundStyle(.white)
 
                     Text(detail)
-                        .font(.system(size: 12))
+                        .font(.caption)
                         .foregroundStyle(PhoneFreeTheme.muted)
                 }
 
@@ -337,18 +338,18 @@ struct PhoneFreeProgressView: View {
                 PhoneFreeCard {
                     HStack(alignment: .top, spacing: 12) {
                         Image(systemName: "sun.max")
-                            .font(.system(size: 18))
+                            .scaledFont(18, relativeTo: .title3)
                             .foregroundStyle(PhoneFreeTheme.accent)
 
                         VStack(alignment: .leading, spacing: 5) {
                             Text("A fresh start")
-                                .font(.system(size: 14, weight: .medium))
+                                .scaledFont(14, weight: .medium, relativeTo: .subheadline)
                                 .foregroundStyle(.white)
 
                             Text(
                                 "Your phone-free moments will appear here."
                             )
-                            .font(.system(size: 12))
+                            .font(.caption)
                             .foregroundStyle(PhoneFreeTheme.muted)
                         }
 
@@ -375,18 +376,18 @@ struct PhoneFreeProgressView: View {
                         ? "checkmark.circle.fill"
                         : "pause.circle"
                 )
-                .font(.system(size: 18))
+                .scaledFont(18, relativeTo: .title3)
                 .foregroundStyle(
                     completed ? PhoneFreeTheme.accent : PhoneFreeTheme.muted
                 )
 
                 VStack(alignment: .leading, spacing: 3) {
                     Text(title(for: event))
-                        .font(.system(size: 14, weight: .medium))
+                        .scaledFont(14, weight: .medium, relativeTo: .subheadline)
                         .foregroundStyle(.white)
 
                     Text(event.timestamp, style: .time)
-                        .font(.system(size: 12))
+                        .font(.caption)
                         .foregroundStyle(PhoneFreeTheme.muted)
                 }
 
@@ -394,7 +395,7 @@ struct PhoneFreeProgressView: View {
 
                 if let duration = event.duration {
                     Text(PhoneFreeFormat.duration(duration))
-                        .font(.system(size: 13, weight: .medium))
+                        .font(.footnote.weight(.medium))
                         .foregroundStyle(PhoneFreeTheme.accent)
                 }
             }
