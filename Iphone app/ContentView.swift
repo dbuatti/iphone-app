@@ -13,6 +13,7 @@
 
 import Combine
 import SwiftUI
+import UIKit
 
 struct ContentView: View {
     @Environment(\.scenePhase) private var scenePhase
@@ -89,6 +90,20 @@ struct ContentView: View {
             NotificationCenter.default.publisher(for: .phoneFreeUsageChanged)
         ) { _ in
             store.reloadUsage()
+        }
+        .onReceive(
+            NotificationCenter.default.publisher(
+                for: UIApplication.protectedDataWillBecomeUnavailableNotification
+            )
+        ) { _ in
+            store.handleDeviceLocked()
+        }
+        .onReceive(
+            NotificationCenter.default.publisher(
+                for: UIApplication.protectedDataDidBecomeAvailableNotification
+            )
+        ) { _ in
+            store.handleDeviceUnlocked()
         }
         .onReceive(
             Timer.publish(every: 1, on: .main, in: .common).autoconnect()

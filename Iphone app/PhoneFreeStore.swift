@@ -17,6 +17,7 @@
 
 import Foundation
 import Observation
+import UIKit
 import WidgetKit
 
 // MARK: - Events
@@ -201,16 +202,53 @@ final class PhoneFreeStore {
     /// Called when the app leaves the front, so the gates can appear again the
     /// next time it is opened. That repeat is the point.
     ///
-    /// Leaving the app is the one "put down" signal iOS does give, so the use
-    /// session ends here: the counter starts again from this moment — or
-    /// carries on, if this was inside the grace period.
+    /// Leaving the screen is only a "put down" signal if the device is
+    /// actually *locked*. If it is still unlocked, the user has just switched
+    /// apps or gone to the Home Screen — they are still using the phone, so
+    /// the use session stays open: the counter keeps freezing, and resets
+    /// after the grace period, exactly as it does while PhoneFree is on
+    /// screen. Only a locked device ends the session and starts the counter
+    /// counting the time away again.
     func handleResignedActive() {
         promiseGateShownThisSession = false
         isInForeground = false
 
-        usage.endUse(at: Date())
+        let now = Date()
+
+        if UIApplication.shared.isProtectedDataAvailable {
+            // Still unlocked: still in use. The session stays open, so the
+            // counter freezes rather than counting up. There is now other-app
+            // time at stake, so the countdown reminders run it home.
+            if usage.hasStretchAtStake {
+                PhoneFreeUseReminders.schedule(for: usage, now: now)
+            }
+        } else {
+            // Locked: the phone went down. The counter starts again — or
+            // carries on, if this was inside the grace period.
+            usage.endUse(at: now)
+            PhoneFreeUseReminders.cancel()
+        }
+
         save()
+        syncLockScreenCounter()
+    }
+
+    /// The device locked. This is the real "put down" signal, wherever the
+    /// app happens to be, so the use session ends and the counter starts
+    /// counting the time away again from this moment.
+    func handleDeviceLocked() {
+        usage.endUse(at: Date())
         PhoneFreeUseReminders.cancel()
+        save()
+        syncLockScreenCounter()
+    }
+
+    /// The device unlocked: the phone is back in hand. The use session
+    /// starts so the counter freezes — but `lastCheckIn` is left untouched,
+    /// so the away gap the check-in gate reports is still the honest one.
+    func handleDeviceUnlocked() {
+        usage.beginUse(at: Date())
+        save()
         syncLockScreenCounter()
     }
 
