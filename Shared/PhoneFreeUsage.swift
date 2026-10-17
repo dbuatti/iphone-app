@@ -170,6 +170,24 @@ nonisolated enum PhoneFreeUsage {
             usingSince = nil
         }
 
+        /// Called every so often while PhoneFree itself is open — a use signal
+        /// that is certain, so the session must never be given up on as
+        /// abandoned. Once the grace period has passed (the counter is at zero
+        /// anyway) the session is re-anchored to now, keeping it fresh.
+        mutating func keepAlive(at now: Date) {
+            guard let usingSince else {
+                beginUse(at: now)
+                return
+            }
+
+            guard now.timeIntervalSince(usingSince) > 10 * 60 else { return }
+
+            // Close the stretch the session froze, then hold at zero.
+            record(frozenInterval, endedAt: usingSince)
+            lastCheckIn = now
+            self.usingSince = now.addingTimeInterval(-resetAfter)
+        }
+
         /// An abandoned session folded into `lastCheckIn`: it is assumed to
         /// have run past the grace period, so the reset stands from then.
         func settled(at now: Date) -> State {

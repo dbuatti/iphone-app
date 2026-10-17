@@ -37,6 +37,12 @@ nonisolated struct PhoneFreeWidgetAttributes: ActivityAttributes {
         /// `startDate` rather than down to `endDate`.
         var countsUp: Bool = false
 
+        /// While the phone is in use: the stretch that is frozen, and when it
+        /// resets. `nil` when the counter is simply counting. After
+        /// `resetsAt` the activity goes stale and shows the reset state.
+        var pausedSeconds: TimeInterval? = nil
+        var resetsAt: Date? = nil
+
         /// Which planned activity should be on screen right now.
         ///
         /// Segments are in order, so the first one that has not yet finished is

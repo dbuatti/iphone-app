@@ -119,6 +119,10 @@ enum PhoneFreeUseReminders {
         WidgetCenter.shared.reloadAllTimelines()
 
         NotificationCenter.default.post(name: .phoneFreeUsageChanged, object: nil)
+
+        Task {
+            await PhoneFreeLiveActivityManager.shared.showAwayCounter(state)
+        }
     }
 }
 

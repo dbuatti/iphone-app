@@ -23,7 +23,10 @@ import AppIntents
 import Foundation
 import WidgetKit
 
-struct StartPhoneUseIntent: AppIntent {
+// Both actions are Live Activity intents, which is what lets them start or
+// update the Lock Screen counter while PhoneFree itself stays closed.
+
+struct StartPhoneUseIntent: LiveActivityIntent {
     static let title: LocalizedStringResource = "I'm Using My Phone"
 
     static let description = IntentDescription(
@@ -61,12 +64,13 @@ struct StartPhoneUseIntent: AppIntent {
 
         WidgetCenter.shared.reloadAllTimelines()
         NotificationCenter.default.post(name: .phoneFreeUsageChanged, object: nil)
+        await PhoneFreeLiveActivityManager.shared.showAwayCounter(state, now: now)
 
         return .result()
     }
 }
 
-struct StopPhoneUseIntent: AppIntent {
+struct StopPhoneUseIntent: LiveActivityIntent {
     static let title: LocalizedStringResource = "I Put My Phone Down"
 
     static let description = IntentDescription(
@@ -82,6 +86,9 @@ struct StopPhoneUseIntent: AppIntent {
     func perform() async throws -> some IntentResult {
         PhoneFreeAutomationHealth.mark(.closed)
         PhoneFreeUseReminders.putDown()
+        await PhoneFreeLiveActivityManager.shared.showAwayCounter(
+            PhoneFreeUsage.load()
+        )
         return .result()
     }
 }

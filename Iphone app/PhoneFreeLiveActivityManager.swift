@@ -58,16 +58,107 @@ final class PhoneFreeLiveActivityManager {
         }
     }
 
-    /// Removes the counting-up Live Activity. Live Activities are for running
-    /// goals only now — the always-on away counter lives in the Lock Screen
-    /// widget instead, because a Live Activity cannot run forever.
-    func endCheckIn() {
-        Task {
-            for activity in Activity<PhoneFreeWidgetAttributes>.activities
-            where activity.content.state.countsUp {
-                await activity.end(nil, dismissalPolicy: .immediate)
+    // MARK: - The always-on away counter
+
+    /// Shared with the Shortcuts actions, so they can tell whether to show it.
+    static let liveCounterKey = "phoneFreeLiveCounter"
+    private static let counterStartedKey = "phoneFreeLiveCounterStartedAt"
+
+    /// On unless the user turned it off in Settings.
+    static var liveCounterEnabled: Bool {
+        PhoneFreeUsage.defaults?.object(forKey: liveCounterKey) as? Bool ?? true
+    }
+
+    /// iOS ends a Live Activity after about eight hours. Starting a fresh one
+    /// a little before that, whenever the app or a Shortcuts action runs,
+    /// keeps the counter on the Lock Screen for as long as PhoneFree is used.
+    private let counterRefreshAge: TimeInterval = 6 * 3600
+
+    /// Shows "since you last used your phone" on the Lock Screen and in the
+    /// Dynamic Island when no goal is running. While the phone is in use it
+    /// shows the frozen number and the countdown to the reset instead — the
+    /// moment someone most needs to see it.
+    ///
+    /// Safe to call often: it updates the activity in place rather than
+    /// stacking new ones.
+    func showAwayCounter(
+        _ usage: PhoneFreeUsage.State,
+        now: Date = Date()
+    ) async {
+        guard isSupported, Self.liveCounterEnabled else {
+            await endAwayCounter()
+            return
+        }
+
+        let content = Self.counterContent(for: usage, at: now)
+
+        // A goal's countdown is replaced: this is only called with no goal.
+        for activity in Activity<PhoneFreeWidgetAttributes>.activities
+        where !activity.content.state.countsUp {
+            await activity.end(nil, dismissalPolicy: .immediate)
+        }
+
+        let existing = Activity<PhoneFreeWidgetAttributes>.activities
+            .first { $0.content.state.countsUp }
+
+        let startedAt = PhoneFreeUsage.defaults?
+            .object(forKey: Self.counterStartedKey) as? Date ?? .distantPast
+
+        if let existing, now.timeIntervalSince(startedAt) < counterRefreshAge {
+            await existing.update(content)
+            return
+        }
+
+        await existing?.end(nil, dismissalPolicy: .immediate)
+
+        do {
+            _ = try Activity.request(
+                attributes: PhoneFreeWidgetAttributes(name: "PhoneFree"),
+                content: content,
+                pushType: nil
+            )
+            PhoneFreeUsage.defaults?.set(now, forKey: Self.counterStartedKey)
+        } catch {
+            // Best effort — the Lock Screen widget shows the same number.
+        }
+    }
+
+    /// Takes the away counter off the Lock Screen (turned off in Settings).
+    func endAwayCounter() async {
+        for activity in Activity<PhoneFreeWidgetAttributes>.activities
+        where activity.content.state.countsUp {
+            await activity.end(nil, dismissalPolicy: .immediate)
+        }
+    }
+
+    private static func counterContent(
+        for usage: PhoneFreeUsage.State,
+        at now: Date
+    ) -> ActivityContent<PhoneFreeWidgetAttributes.ContentState> {
+        var state = PhoneFreeWidgetAttributes.ContentState(
+            startDate: usage.countingSince(at: now) ?? now,
+            endDate: now,
+            goalMinutes: 0,
+            countsUp: true
+        )
+
+        var staleDate: Date?
+
+        if usage.isUsing(at: now), let usingSince = usage.usingSince {
+            state.startDate = usingSince
+            state.pausedSeconds = usage.hasReset(at: now)
+                ? 0
+                : usage.frozenInterval
+            state.resetsAt = usage.resetsAt
+
+            // Going stale at the reset is what switches the Lock Screen to
+            // the reset message without the app having to run.
+            if let resetsAt = usage.resetsAt, resetsAt > now {
+                staleDate = resetsAt
             }
         }
+
+        return ActivityContent(state: state, staleDate: staleDate)
     }
 
     /// Re-attaches to a running goal after the app relaunches. If an activity

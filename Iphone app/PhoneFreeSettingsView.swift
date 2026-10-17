@@ -122,6 +122,24 @@ struct PhoneFreeSettingsView: View {
                     }
                     .tint(PhoneFreeTheme.accent)
 
+                    Toggle(isOn: $store.liveCounterEnabled) {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Live counter on the Lock Screen")
+                                .font(.subheadline.weight(.medium))
+                                .foregroundStyle(.white)
+
+                            Text(
+                                "The number you see before you unlock, and a "
+                                + "countdown in the Dynamic Island while "
+                                + "you're on your phone."
+                            )
+                            .font(.caption)
+                            .foregroundStyle(PhoneFreeTheme.muted)
+                            .fixedSize(horizontal: false, vertical: true)
+                        }
+                    }
+                    .tint(PhoneFreeTheme.accent)
+
                     if notificationStatus != .authorized {
                         notificationsButton
                     }

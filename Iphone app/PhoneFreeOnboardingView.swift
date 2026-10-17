@@ -282,6 +282,9 @@ struct PhoneFreeOnboardingView: View {
                     advance()
                 }
             }
+            // A new button per step, so the label swaps rather than fading
+            // between two words.
+            .id(step)
 
             if let skipTitle {
                 Button(skipTitle) {
@@ -401,7 +404,8 @@ struct PhoneFreeShortcutsSetupSteps: View {
         VStack(alignment: .leading, spacing: 12) {
             step(1, "In Shortcuts, tap Automation, then New Automation, then "
                 + "App.")
-            step(2, "Choose your apps. Tick Is Opened only, and choose Run "
+            step(2, "Choose your apps — ideally every app you use, since any "
+                + "use counts. Tick Is Opened only, and choose Run "
                 + "Immediately.")
             step(3, "Add the PhoneFree action “I'm Using My Phone”.")
             step(4, "Make a second one for the same apps with Is Closed and "

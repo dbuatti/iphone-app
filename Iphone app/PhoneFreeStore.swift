@@ -88,6 +88,18 @@ final class PhoneFreeStore {
         }
     }
 
+    /// The live away counter on the Lock Screen and in the Dynamic Island.
+    /// Kept in the shared defaults, because the Shortcuts actions read it too.
+    var liveCounterEnabled = PhoneFreeLiveActivityManager.liveCounterEnabled {
+        didSet {
+            PhoneFreeUsage.defaults?.set(
+                liveCounterEnabled,
+                forKey: PhoneFreeLiveActivityManager.liveCounterKey
+            )
+            syncLockScreenCounter()
+        }
+    }
+
     /// Repeating Lock Screen reminders while a goal runs. Chosen in Settings.
     var goalNudgesEnabled = true {
         didSet {
@@ -115,9 +127,10 @@ final class PhoneFreeStore {
 
     private var promiseGateShownThisSession = false
 
-    /// Set by "I'll put it down" so the rest of this visit to the app does not
-    /// immediately count as using the phone again.
-    private var putDownThisSession = false
+    /// `true` while PhoneFree is on screen. The app being open is the one use
+    /// signal that is never in doubt, so while this is set the counter is
+    /// always frozen — however long the visit, whatever is on screen.
+    private var isInForeground = false
     private var lastCheckInGateShownAt: Date?
     private var didLoad = false
 
@@ -144,6 +157,16 @@ final class PhoneFreeStore {
         let now = Date()
         logPickup(at: now)
 
+        // Having the app open *is* using the phone — with or without a goal.
+        // The counter freezes, and resets if this goes on past the grace
+        // period. The number the gate shows is read first, so it is the
+        // stretch the user is about to put at risk.
+        let gap = usage.awayInterval(at: now)
+
+        isInForeground = true
+        usage.beginUse(at: now)
+        save()
+
         if goalActive {
             guard let end = goalEnd, end > now else { return }
 
@@ -153,17 +176,6 @@ final class PhoneFreeStore {
             }
 
             return
-        }
-
-        // No goal running, so having the app open *is* using the phone: the
-        // counter freezes, and resets if this goes on past the grace period.
-        // The number the gate shows is read before that, so it is the stretch
-        // the user is about to put at risk.
-        let gap = usage.awayInterval(at: now)
-
-        if !putDownThisSession {
-            usage.beginUse(at: now)
-            save()
         }
 
         // Never stack the gate on top of an open reflection sheet, or behind
@@ -190,31 +202,55 @@ final class PhoneFreeStore {
     /// next time it is opened. That repeat is the point.
     ///
     /// Leaving the app is the one "put down" signal iOS does give, so the use
-    /// session it opened ends here.
+    /// session ends here: the counter starts again from this moment — or
+    /// carries on, if this was inside the grace period.
     func handleResignedActive() {
         promiseGateShownThisSession = false
-        putDownThisSession = false
-
-        guard !goalActive else { return }
+        isInForeground = false
 
         usage.endUse(at: Date())
         save()
         PhoneFreeUseReminders.cancel()
+        syncLockScreenCounter()
     }
 
     /// Re-reads the counter that the Shortcuts actions share with the app.
+    ///
+    /// While the app is on screen its own session wins: a Shortcuts "I put my
+    /// phone down" that lands as someone switches *into* PhoneFree must not
+    /// start the counter while they are looking at it.
     func reloadUsage() {
-        let shared = PhoneFreeUsage.load()
-        usage = shared.settled(at: Date())
+        let now = Date()
+        var shared = PhoneFreeUsage.load().settled(at: now)
 
-        if usage != shared {
+        if isInForeground {
+            if usage.isUsing(at: now), !shared.isUsing(at: now) {
+                shared.lastCheckIn = usage.lastCheckIn
+                shared.usingSince = usage.usingSince
+            }
+            shared.beginUse(at: now)
+        }
+
+        if shared != usage {
+            usage = shared
             save()
         }
     }
 
-    /// The goal's own clock runs down whether or not the app is open.
+    /// The goal's own clock runs down whether or not the app is open. While
+    /// the app is open, the use session is kept fresh so a long visit is never
+    /// mistaken for an abandoned one.
     func tick() {
         finishExpiredGoalIfNeeded()
+
+        guard isInForeground else { return }
+
+        let before = usage
+        usage.keepAlive(at: Date())
+
+        if usage != before {
+            save()
+        }
     }
 
     // MARK: - Goal actions
@@ -243,8 +279,12 @@ final class PhoneFreeStore {
         goalActive = true
 
         // Starting a goal is itself a promise to stop using the phone, so the
-        // streak clock starts here.
+        // streak clock starts again — from the moment the phone goes down. The
+        // app is still open, so until then it holds at zero.
         usage.restart(at: now)
+        if isInForeground {
+            usage.beginUse(at: now)
+        }
         PhoneFreeUseReminders.cancel()
 
         events.append(
@@ -402,15 +442,11 @@ final class PhoneFreeStore {
         showingCheckInGate = false
     }
 
-    /// "I'll put it down" — the use session ends now, inside the grace period,
-    /// so the stretch survives and the seconds spent here are not counted.
+    /// "I'll put it down" — the gate goes. Nothing else changes yet: the
+    /// phone is still in their hand. The counter carries on the moment they
+    /// lock it or leave the app, inside the grace period.
     func putItDown() {
         showingCheckInGate = false
-        putDownThisSession = true
-
-        usage.endUse(at: Date())
-        save()
-        PhoneFreeUseReminders.cancel()
     }
 
     // MARK: - Reflections
@@ -741,9 +777,12 @@ final class PhoneFreeStore {
             return
         }
 
-        // No goal running: there is no Live Activity to show. End any that
-        // survived from an earlier goal, and let the widget carry the number.
-        PhoneFreeLiveActivityManager.shared.endCheckIn()
+        // No goal running: the Live Activity becomes the always-on away
+        // counter, showing the same number as the widget and the app.
+        let usage = usage
+        Task {
+            await PhoneFreeLiveActivityManager.shared.showAwayCounter(usage)
+        }
     }
 
     // MARK: - Data

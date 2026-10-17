@@ -61,7 +61,7 @@ private struct KnockedOutActivityBadge: View {
 struct PhoneFreeWidgetLiveActivity: Widget {
     var body: some WidgetConfiguration {
         ActivityConfiguration(for: PhoneFreeWidgetAttributes.self) { context in
-            lockScreen(context.state)
+            lockScreen(context.state, isStale: context.isStale)
                 .activityBackgroundTint(LAColor.background)
                 .activitySystemActionForegroundColor(.white)
 
@@ -74,7 +74,7 @@ struct PhoneFreeWidgetLiveActivity: Widget {
                 }
 
                 DynamicIslandExpandedRegion(.trailing) {
-                    countText(context.state)
+                    countText(context.state, isStale: context.isStale)
                         .font(
                             .system(
                                 size: 18,
@@ -88,7 +88,7 @@ struct PhoneFreeWidgetLiveActivity: Widget {
                 }
 
                 DynamicIslandExpandedRegion(.bottom) {
-                    expandedBottom(context.state)
+                    expandedBottom(context.state, isStale: context.isStale)
                 }
 
             } compactLeading: {
@@ -96,7 +96,7 @@ struct PhoneFreeWidgetLiveActivity: Widget {
                     .foregroundStyle(LAColor.mint)
 
             } compactTrailing: {
-                countText(context.state)
+                countText(context.state, isStale: context.isStale)
                     .monospacedDigit()
                     .frame(maxWidth: 50)
 
@@ -121,25 +121,81 @@ struct PhoneFreeWidgetLiveActivity: Widget {
 
     @ViewBuilder
     private func lockScreen(
-        _ state: PhoneFreeWidgetAttributes.ContentState
+        _ state: PhoneFreeWidgetAttributes.ContentState,
+        isStale: Bool
     ) -> some View {
         if state.countsUp {
-            checkInLockScreen(state)
+            checkInLockScreen(state, phase: counterPhase(state, isStale: isStale))
         } else {
             goalLockScreen(state)
         }
     }
 
-    /// No goal: the number that answers "how long since I last used this?".
+    // MARK: Away counter phases
+
+    /// What the away counter is doing. The paused state carries its own
+    /// stale date, so the switch to "reset" happens on the Lock Screen at the
+    /// right second even though the app is not running.
+    private enum CounterPhase {
+        case counting(since: Date)
+        case paused(frozen: TimeInterval, usingSince: Date, resetsAt: Date)
+        case reset
+    }
+
+    private func counterPhase(
+        _ state: PhoneFreeWidgetAttributes.ContentState,
+        isStale: Bool
+    ) -> CounterPhase {
+        guard let resetsAt = state.resetsAt,
+              let frozen = state.pausedSeconds else {
+            return .counting(since: state.startDate)
+        }
+
+        if isStale || resetsAt <= Date() {
+            return .reset
+        }
+
+        return .paused(
+            frozen: frozen,
+            usingSince: state.startDate,
+            resetsAt: resetsAt
+        )
+    }
+
+    /// A clock counting up from `since`, always as h:mm:ss / m:ss. The plain
+    /// `.timer` style can collapse to "<1 minute" on the Lock Screen, which is
+    /// not the number someone should see before they unlock.
+    private func countUp(from since: Date) -> Text {
+        Text(
+            timerInterval: since...since.addingTimeInterval(30 * 86_400),
+            countsDown: false,
+            showsHours: true
+        )
+    }
+
+    private func clock(_ interval: TimeInterval) -> String {
+        let seconds = max(0, Int(interval))
+        let hours = seconds / 3600
+        let minutes = (seconds % 3600) / 60
+
+        return hours > 0
+            ? String(format: "%d:%02d:%02d", hours, minutes, seconds % 60)
+            : String(format: "%d:%02d", minutes, seconds % 60)
+    }
+
+    /// No goal: the number that answers "how long since I last used this?" —
+    /// counting while the phone is down, frozen while it is in use, and held
+    /// at zero once the grace period has run out.
     private func checkInLockScreen(
-        _ state: PhoneFreeWidgetAttributes.ContentState
+        _ state: PhoneFreeWidgetAttributes.ContentState,
+        phase: CounterPhase
     ) -> some View {
         HStack(spacing: 16) {
             ZStack {
                 Circle()
                     .fill(LAColor.mint.opacity(0.15))
 
-                Image(systemName: "iphone.slash")
+                Image(systemName: phaseSymbol(phase))
                     .font(.system(size: 21, weight: .medium))
                     .foregroundStyle(LAColor.mint)
             }
@@ -151,16 +207,23 @@ struct PhoneFreeWidgetLiveActivity: Widget {
                     .tracking(2)
                     .foregroundStyle(LAColor.mint)
 
-                Text(state.startDate, style: .timer)
-                    .font(
-                        .system(size: 30, weight: .medium, design: .rounded)
-                    )
-                    .monospacedDigit()
-                    .foregroundStyle(.white)
-                    .minimumScaleFactor(0.7)
-                    .lineLimit(1)
+                Group {
+                    switch phase {
+                    case .counting(let since):
+                        countUp(from: since)
+                    case .paused(let frozen, _, _):
+                        Text(clock(frozen))
+                    case .reset:
+                        Text("0:00")
+                    }
+                }
+                .font(.system(size: 30, weight: .medium, design: .rounded))
+                .monospacedDigit()
+                .foregroundStyle(.white)
+                .minimumScaleFactor(0.7)
+                .lineLimit(1)
 
-                Text("Since you last used your phone")
+                phaseCaption(phase)
                     .font(.system(size: 12))
                     .foregroundStyle(.white.opacity(0.7))
                     .lineLimit(1)
@@ -170,6 +233,32 @@ struct PhoneFreeWidgetLiveActivity: Widget {
             Spacer(minLength: 0)
         }
         .padding(18)
+    }
+
+    private func phaseSymbol(_ phase: CounterPhase) -> String {
+        switch phase {
+        case .counting: "iphone.slash"
+        case .paused: "pause.fill"
+        case .reset: "arrow.counterclockwise"
+        }
+    }
+
+    /// One line under the number, in words. While paused it counts down to
+    /// the reset — the reason to put the phone down now.
+    @ViewBuilder
+    private func phaseCaption(_ phase: CounterPhase) -> some View {
+        switch phase {
+        case .counting:
+            Text("Since you last used your phone")
+        case .paused(_, let usingSince, let resetsAt):
+            HStack(spacing: 4) {
+                Text("Paused · resets in")
+                Text(timerInterval: usingSince...resetsAt, countsDown: true)
+                    .monospacedDigit()
+            }
+        case .reset:
+            Text("Starts again when you put it down")
+        }
     }
 
     /// A goal is running: count down, and show the current activity.
@@ -252,7 +341,8 @@ struct PhoneFreeWidgetLiveActivity: Widget {
 
     @ViewBuilder
     private func expandedBottom(
-        _ state: PhoneFreeWidgetAttributes.ContentState
+        _ state: PhoneFreeWidgetAttributes.ContentState,
+        isStale: Bool
     ) -> some View {
         if state.countsUp {
             HStack {
@@ -262,7 +352,7 @@ struct PhoneFreeWidgetLiveActivity: Widget {
                         .tracking(2)
                         .foregroundStyle(LAColor.mint)
 
-                    Text("Away since you last used your phone")
+                    phaseCaption(counterPhase(state, isStale: isStale))
                         .font(.system(size: 13))
                         .foregroundStyle(.white.opacity(0.75))
                         .lineLimit(1)
@@ -311,13 +401,23 @@ struct PhoneFreeWidgetLiveActivity: Widget {
         }
     }
 
-    /// Counts down to the goal, or up since the last phone use.
+    /// Counts down to the goal, or shows the away counter. While the phone
+    /// is in use the Dynamic Island counts down to the reset instead — it is
+    /// on screen over whatever app is open, which is where it matters.
     @ViewBuilder
     private func countText(
-        _ state: PhoneFreeWidgetAttributes.ContentState
+        _ state: PhoneFreeWidgetAttributes.ContentState,
+        isStale: Bool
     ) -> some View {
         if state.countsUp {
-            Text(state.startDate, style: .timer)
+            switch counterPhase(state, isStale: isStale) {
+            case .counting(let since):
+                countUp(from: since)
+            case .paused(_, let usingSince, let resetsAt):
+                Text(timerInterval: usingSince...resetsAt, countsDown: true)
+            case .reset:
+                Text("0:00")
+            }
         } else {
             Text(state.endDate, style: .timer)
         }
@@ -409,5 +509,14 @@ struct PhoneFreeWidgetLiveActivity: Widget {
         goalMinutes: 0,
         segments: [],
         countsUp: true
+    )
+    PhoneFreeWidgetAttributes.ContentState(
+        startDate: .now,
+        endDate: .now,
+        goalMinutes: 0,
+        segments: [],
+        countsUp: true,
+        pausedSeconds: 3 * 3600 + 12 * 60,
+        resetsAt: .now.addingTimeInterval(60)
     )
 }

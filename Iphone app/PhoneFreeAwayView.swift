@@ -177,11 +177,15 @@ struct PhoneFreeAwayView: View {
                     .frame(width: 210, height: 210)
 
                     Text(
-                        "Away from your phone for "
-                        + PhoneFreeFormat.clock(
-                            store.awayInterval(at: context.date)
-                        )
+                        store.usage.isUsing(at: context.date)
+                            ? "Paused while you're on your phone. Lock it "
+                                + "and the goal does the rest."
+                            : "Away from your phone for "
+                                + PhoneFreeFormat.clock(
+                                    store.awayInterval(at: context.date)
+                                )
                     )
+                    .multilineTextAlignment(.center)
                     .font(.footnote.weight(.medium))
                     .foregroundStyle(PhoneFreeTheme.accent)
 
@@ -611,8 +615,10 @@ struct PhoneFreeAwayView: View {
         }
     }
 
+    /// While PhoneFree is open the phone is in use, so the caption never
+    /// claims the number is "since you last used" it.
     private func heroCaption(at date: Date) -> String {
-        guard store.showsResetCountdown(at: date) else {
+        guard store.isUsingPhone(at: date) else {
             return "SINCE YOU LAST USED YOUR PHONE"
         }
 
@@ -662,7 +668,7 @@ struct PhoneFreeAwayView: View {
                                     ? "That's okay. It counts up again from the "
                                         + "moment you put your phone down."
                                     : "You're on your phone, so the counter is "
-                                        + "paused. Put it down now and "
+                                        + "paused. Lock it now and "
                                         + (usage.frozenInterval >= 60
                                             ? "your "
                                                 + PhoneFreeFormat.clock(
@@ -685,14 +691,14 @@ struct PhoneFreeAwayView: View {
                             label: "Time left before your timer resets"
                         )
 
-                        // Secondary on purpose: "start a goal" further down
-                        // stays the one filled button on this screen.
-                        PhoneFreeSecondaryButton(
-                            title: "I'll put it down",
-                            tint: PhoneFreeTheme.accent
-                        ) {
-                            store.putItDown()
-                        }
+                        // No button: the only way to put the phone down is to
+                        // lock it, and a button here would pretend otherwise.
+                        Label(
+                            "Press the side button to lock your phone",
+                            systemImage: "lock"
+                        )
+                        .font(.footnote.weight(.medium))
+                        .foregroundStyle(PhoneFreeTheme.accent)
                     }
                 }
             }
