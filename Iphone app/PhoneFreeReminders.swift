@@ -200,6 +200,102 @@ extension Notification.Name {
     static let phoneFreeUsageChanged = Notification.Name("phonefreeUsageChanged")
 }
 
+// MARK: - The completion bell
+
+/// The bell that marks a task, or the whole session, finishing.
+///
+/// It is delivered two ways, because the two cases need different mechanisms:
+/// as a notification, so it still rings while PhoneFree is suspended (the case
+/// the bell is most for), and played in-app by `PhoneFreeAudio`, which is the
+/// only one that can sound through the Ring/Silent switch.
+enum PhoneFreeGoalChimes {
+    static let requestPrefix = "pf_chime_"
+
+    /// iOS keeps at most 64 pending notifications per app. A plan rarely has
+    /// more than a handful of tasks, but the cap stops a pathological plan from
+    /// crowding out the goal nudges that share the same budget.
+    private static let maxChimes = 24
+
+    /// A bell at the end of every task but the last — the session's own bell
+    /// closes that one out — and one when the whole goal finishes.
+    static func schedule(
+        end: Date,
+        segments: [PhoneFreeActivitySegment],
+        now: Date = Date()
+    ) {
+        cancel()
+
+        let center = UNUserNotificationCenter.current()
+
+        for (offset, segment) in segments.enumerated() {
+            guard offset < segments.count - 1 else { continue }
+            guard segment.end < end else { continue }
+            guard offset < maxChimes else { break }
+
+            let delay = segment.end.timeIntervalSince(now)
+            guard delay > 0 else { continue }
+
+            add(
+                center: center,
+                id: requestPrefix + "task_\(offset)",
+                delay: delay,
+                title: "Time for \(segments[offset + 1].name)",
+                body: "\(segment.name) done. On to the next one."
+            )
+        }
+
+        let endDelay = end.timeIntervalSince(now)
+        guard endDelay > 0 else { return }
+
+        add(
+            center: center,
+            id: requestPrefix + "done",
+            delay: endDelay,
+            title: "Goal complete",
+            body: "You've earned free phone time. Nice one."
+        )
+    }
+
+    private static func add(
+        center: UNUserNotificationCenter,
+        id: String,
+        delay: TimeInterval,
+        title: String,
+        body: String
+    ) {
+        let content = UNMutableNotificationContent()
+        content.title = title
+        content.body = body
+        content.threadIdentifier = "pf_goal"
+        content.interruptionLevel = .active
+        content.sound = UNNotificationSound(
+            named: UNNotificationSoundName(
+                PhoneFreeAudio.soundName + "." + PhoneFreeAudio.soundExtension
+            )
+        )
+
+        center.add(
+            UNNotificationRequest(
+                identifier: id,
+                content: content,
+                trigger: UNTimeIntervalNotificationTrigger(
+                    timeInterval: delay,
+                    repeats: false
+                )
+            )
+        )
+    }
+
+    static func cancel() {
+        let center = UNUserNotificationCenter.current()
+        let ids = [requestPrefix + "done"]
+            + (0 ..< maxChimes).map { requestPrefix + "task_\($0)" }
+
+        center.removePendingNotificationRequests(withIdentifiers: ids)
+        center.removeDeliveredNotifications(withIdentifiers: ids)
+    }
+}
+
 // MARK: - Goal nudges
 
 enum PhoneFreeGoalNudges {

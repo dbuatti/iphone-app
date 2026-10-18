@@ -28,6 +28,8 @@ struct PhoneFreeSettingsView: View {
 
                 interruptSection
 
+                soundSection
+
                 lockScreenSection
 
                 windowsSection
@@ -166,6 +168,91 @@ struct PhoneFreeSettingsView: View {
                     PhoneFreeShortcutsSetupSteps()
 
                     PhoneFreeAutomationStatusRow()
+                }
+            }
+        }
+    }
+
+    // MARK: - The bell
+
+    private var soundSection: some View {
+        @Bindable var store = store
+
+        return VStack(alignment: .leading, spacing: 12) {
+            PhoneFreeSectionLabel("THE BELL")
+
+            PhoneFreeCard {
+                VStack(alignment: .leading, spacing: 14) {
+                    Text(
+                        "A short glockenspiel chime marks a timer finishing — "
+                        + "the end of a task, or the end of a goal."
+                    )
+                    .font(.footnote)
+                    .foregroundStyle(PhoneFreeTheme.muted)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                    Toggle(isOn: $store.finishChimeEnabled) {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Bell when a goal finishes")
+                                .font(.subheadline.weight(.medium))
+                                .foregroundStyle(.white)
+
+                            Text("One chime when the phone-free time is up. "
+                                 + "It rings from a notification if PhoneFree "
+                                 + "is closed.")
+                            .font(.caption)
+                            .foregroundStyle(PhoneFreeTheme.muted)
+                            .fixedSize(horizontal: false, vertical: true)
+                        }
+                    }
+                    .tint(PhoneFreeTheme.accent)
+
+                    if store.finishChimeEnabled {
+                        Toggle(isOn: $store.taskChimeEnabled) {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("Bell at the end of each task")
+                                    .font(.subheadline.weight(.medium))
+                                    .foregroundStyle(.white)
+
+                                Text("For plans, so a change of activity is "
+                                     + "felt rather than discovered.")
+                                .font(.caption)
+                                .foregroundStyle(PhoneFreeTheme.muted)
+                                .fixedSize(horizontal: false, vertical: true)
+                            }
+                        }
+                        .tint(PhoneFreeTheme.accent)
+
+                        Toggle(isOn: $store.chimeOverridesSilent) {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("Sound even when muted")
+                                    .font(.subheadline.weight(.medium))
+                                    .foregroundStyle(.white)
+
+                                Text(
+                                    "PhoneFree rings the bell itself, so it "
+                                    + "can sound through the Ring/Silent "
+                                    + "switch while the app is open. The "
+                                    + "Lock Screen notification still follows "
+                                    + "your switch — iOS only lets "
+                                    + "Apple-approved “critical” alerts ignore "
+                                    + "it."
+                                )
+                                .font(.caption)
+                                .foregroundStyle(PhoneFreeTheme.muted)
+                                .fixedSize(horizontal: false, vertical: true)
+                            }
+                        }
+                        .tint(PhoneFreeTheme.accent)
+
+                        PhoneFreeSecondaryButton(
+                            title: "Play the bell",
+                            symbol: "bell"
+                        ) {
+                            store.previewChime()
+                        }
+                        .padding(.vertical, 2)
+                    }
                 }
             }
         }

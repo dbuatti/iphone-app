@@ -17,6 +17,18 @@ final class PhoneFreeAppDelegate: NSObject, UIApplicationDelegate,
         return true
     }
 
+    /// While PhoneFree is on screen the bell is played by the app itself, so a
+    /// notification would only double it. Silencing foreground banners keeps
+    /// the sound to a single bell and leaves the app's own screens to speak.
+    func userNotificationCenter(
+        _ center: UNUserNotificationCenter,
+        willPresent notification: UNNotification,
+        withCompletionHandler completionHandler:
+            @escaping (UNNotificationPresentationOptions) -> Void
+    ) {
+        completionHandler([])
+    }
+
     /// The user tapped the notification, or tapped "Start phone-free".
     func userNotificationCenter(
         _ center: UNUserNotificationCenter,

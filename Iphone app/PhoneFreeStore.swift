@@ -135,8 +135,50 @@ final class PhoneFreeStore {
         didSet {
             guard didLoad else { return }
             save()
-            rescheduleGoalNudges()
+            rescheduleGoalAlerts()
         }
+    }
+
+    /// A bell when a goal finishes. Chosen in Settings.
+    var finishChimeEnabled = true {
+        didSet {
+            guard didLoad else { return }
+            save()
+            rescheduleGoalAlerts()
+        }
+    }
+
+    /// A bell at the end of each task in a plan, so a change of activity is
+    /// felt rather than discovered. Chosen in Settings.
+    var taskChimeEnabled = true {
+        didSet {
+            guard didLoad else { return }
+            save()
+            rescheduleGoalAlerts()
+        }
+    }
+
+    /// Whether the bell sounds through the Ring/Silent switch. Off, it follows
+    /// the switch like every other app. Chosen in Settings.
+    var chimeOverridesSilent = true {
+        didSet {
+            guard didLoad else { return }
+            save()
+        }
+    }
+
+    /// Plays the completion bell, if the user wants it. Called when a timer
+    /// finishes while the app is open; the notification carries it when it is
+    /// not.
+    func playFinishChime() {
+        guard finishChimeEnabled else { return }
+        PhoneFreeAudio.shared.play(overrideSilent: chimeOverridesSilent)
+    }
+
+    /// Plays the bell no matter what, so Settings can let the user hear it
+    /// while they are still deciding.
+    func previewChime() {
+        PhoneFreeAudio.shared.play(overrideSilent: chimeOverridesSilent)
     }
 
     // MARK: Introduction
@@ -182,7 +224,11 @@ final class PhoneFreeStore {
         // The Shortcuts actions may have changed the counter while the app
         // was in the background.
         reloadUsage()
-        finishExpiredGoalIfNeeded()
+
+        // No bell here: a goal that ended while the app was closed has already
+        // rung its notification, and ringing again on the way back in would be
+        // a double.
+        finishExpiredGoalIfNeeded(chime: false)
 
         let now = Date()
         logPickup(at: now)
@@ -308,6 +354,7 @@ final class PhoneFreeStore {
     /// the app is open, the use session is kept fresh so a long visit is never
     /// mistaken for an abandoned one.
     func tick() {
+        chimeForFinishedTask()
         finishExpiredGoalIfNeeded()
 
         guard isInForeground else { return }
@@ -317,6 +364,43 @@ final class PhoneFreeStore {
 
         if usage != before {
             save()
+        }
+    }
+
+    /// The last moment `tick` ran, so a task boundary can be spotted as it is
+    /// crossed rather than depended on to fall on a whole second.
+    @ObservationIgnored private var lastTickAt: Date?
+
+    /// Rings the bell as each planned task ends, while the app is open. When
+    /// the app is suspended — the usual case while a goal runs — the matching
+    /// notification carries the same bell instead.
+    private func chimeForFinishedTask() {
+        let now = Date()
+        defer { lastTickAt = now }
+
+        guard taskChimeEnabled, finishChimeEnabled,
+              goalActive, !plan.isEmpty,
+              let lastTick = lastTickAt,
+              now.timeIntervalSince(lastTick) < 5,
+              let end = goalEnd else { return }
+
+        var cursor = goalStart ?? end
+
+        for planned in plan {
+            guard planned.activity != nil else { continue }
+
+            let segmentEnd = cursor.addingTimeInterval(
+                TimeInterval(planned.minutes * 60)
+            )
+            cursor = segmentEnd
+
+            // The last task's end is the whole goal's own bell, not a task one.
+            guard segmentEnd < end - 0.5 else { break }
+
+            if segmentEnd > lastTick, segmentEnd <= now {
+                playFinishChime()
+                return
+            }
         }
     }
 
@@ -378,7 +462,7 @@ final class PhoneFreeStore {
         // when the reason is obvious; iOS only shows the prompt once.
         Task {
             _ = await PhoneFreeWindowScheduler.shared.requestAuthorization()
-            rescheduleGoalNudges()
+            rescheduleGoalAlerts()
         }
     }
 
@@ -464,6 +548,7 @@ final class PhoneFreeStore {
 
         PhoneFreeLiveActivityManager.shared.end()
         PhoneFreeGoalNudges.cancel()
+        PhoneFreeGoalChimes.cancel()
         syncLockScreenCounter()
 
         requestReflectionIfPlanned()
@@ -471,10 +556,16 @@ final class PhoneFreeStore {
 
     /// The goal ran all the way out. Handled on the next tick or launch, since
     /// the app is usually suspended when it happens.
-    func finishExpiredGoalIfNeeded() {
+    ///
+    /// - Parameter chime: whether to ring the in-app bell. It is on for the
+    ///   foreground tick, where the bell is the only alert, and off when the
+    ///   completion is discovered on the way back in, where it would double the
+    ///   notification that already rang.
+    func finishExpiredGoalIfNeeded(chime: Bool = true) {
         guard goalActive, let end = goalEnd, Date() >= end else { return }
 
         play(.success)
+        if chime { playFinishChime() }
 
         let start = goalStart ?? end
         let protected = end.timeIntervalSince(start)
@@ -502,19 +593,35 @@ final class PhoneFreeStore {
 
         PhoneFreeLiveActivityManager.shared.end()
         PhoneFreeGoalNudges.cancel()
+        PhoneFreeGoalChimes.cancel()
         syncLockScreenCounter()
 
         requestReflectionIfPlanned()
     }
 
-    private func rescheduleGoalNudges() {
-        guard goalActive, goalNudgesEnabled,
-              let start = goalStart, let end = goalEnd else {
+    /// Rebuilds the goal's notifications from the current settings: the
+    /// repeating nudges, and the bells at each task boundary and at the end.
+    private func rescheduleGoalAlerts() {
+        guard goalActive, let start = goalStart, let end = goalEnd else {
             PhoneFreeGoalNudges.cancel()
+            PhoneFreeGoalChimes.cancel()
             return
         }
 
-        PhoneFreeGoalNudges.schedule(start: start, end: end)
+        if goalNudgesEnabled {
+            PhoneFreeGoalNudges.schedule(start: start, end: end)
+        } else {
+            PhoneFreeGoalNudges.cancel()
+        }
+
+        if finishChimeEnabled {
+            PhoneFreeGoalChimes.schedule(
+                end: end,
+                segments: taskChimeEnabled ? buildSegments(from: start) : []
+            )
+        } else {
+            PhoneFreeGoalChimes.cancel()
+        }
     }
 
     // MARK: - Surplus
@@ -961,6 +1068,7 @@ final class PhoneFreeStore {
         save()
         PhoneFreeLiveActivityManager.shared.end()
         PhoneFreeGoalNudges.cancel()
+        PhoneFreeGoalChimes.cancel()
         PhoneFreeUseReminders.cancel()
     }
 
@@ -981,6 +1089,7 @@ final class PhoneFreeStore {
         save()
         PhoneFreeLiveActivityManager.shared.end()
         PhoneFreeGoalNudges.cancel()
+        PhoneFreeGoalChimes.cancel()
         PhoneFreeUseReminders.cancel()
         syncLockScreenCounter()
     }
@@ -1077,6 +1186,20 @@ final class PhoneFreeStore {
             goalNudgesEnabled = defaults.bool(forKey: "phoneFreeGoalNudges")
         }
 
+        if defaults.object(forKey: "phoneFreeFinishChime") != nil {
+            finishChimeEnabled = defaults.bool(forKey: "phoneFreeFinishChime")
+        }
+
+        if defaults.object(forKey: "phoneFreeTaskChime") != nil {
+            taskChimeEnabled = defaults.bool(forKey: "phoneFreeTaskChime")
+        }
+
+        if defaults.object(forKey: "phoneFreeChimeOverridesSilent") != nil {
+            chimeOverridesSilent = defaults.bool(
+                forKey: "phoneFreeChimeOverridesSilent"
+            )
+        }
+
         goalActive = defaults.bool(forKey: "phoneFreeGoalActive")
 
         if let timestamp = defaults.object(
@@ -1144,6 +1267,12 @@ final class PhoneFreeStore {
 
         PhoneFreeUsage.save(usage)
         defaults.set(goalNudgesEnabled, forKey: "phoneFreeGoalNudges")
+        defaults.set(finishChimeEnabled, forKey: "phoneFreeFinishChime")
+        defaults.set(taskChimeEnabled, forKey: "phoneFreeTaskChime")
+        defaults.set(
+            chimeOverridesSilent,
+            forKey: "phoneFreeChimeOverridesSilent"
+        )
 
         WidgetCenter.shared.reloadAllTimelines()
     }
