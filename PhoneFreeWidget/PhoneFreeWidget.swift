@@ -152,7 +152,8 @@ struct PhoneFreeProvider: TimelineProvider {
             // The frozen stretch stays on screen even after the run has ended,
             // so the number is never blanked to 0:00 while the phone is still
             // in the user's hand. `heldAtZero` still flags the reset for the
-            // caption.
+            // medium view's subtext. (`hasReset` implies an open session, so
+            // it is always accompanied by `pausedSeconds`.)
             pausedSeconds: using ? usage.frozenInterval : nil,
             heldAtZero: usage.hasReset(at: now)
         )
@@ -229,19 +230,16 @@ struct PhoneFreeWidgetEntryView: View {
         accessoryIsGoal ? "hourglass" : "iphone.slash"
     }
 
-    private var accessoryCaption: String {
-        accessoryIsGoal
-            ? "TIME LEFT TO YOUR GOAL"
-            : "SINCE YOU LAST USED YOUR PHONE"
-    }
-
-    /// The Home Screen wording. There the phone is plainly in your hand, so
-    /// "paused" and "held at zero" are honest and useful; on the Lock Screen
-    /// the number simply counts on.
-    private var mediumCaption: String {
+    /// The wording above the counter, shared by the Lock Screen and Home
+    /// Screen families. While a session is open the number is paused, so the
+    /// caption says so wherever it shows — it must never claim "since you
+    /// last used your phone" over a counter that is paused *because* the
+    /// phone is in the hand. (`heldAtZero` implies the session is open, so
+    /// the paused wording covers the past-reset state too; the medium view's
+    /// subtext still distinguishes it.)
+    private var counterCaption: String {
         if accessoryIsGoal { return "TIME LEFT TO YOUR GOAL" }
         if entry.pausedSeconds != nil { return "PAUSED — ON YOUR PHONE" }
-        if entry.heldAtZero { return "RESET — PUT IT DOWN" }
         return "SINCE YOU LAST USED YOUR PHONE"
     }
 
@@ -292,22 +290,12 @@ struct PhoneFreeWidgetEntryView: View {
             AccessoryWidgetBackground()
 
             if let date = accessoryDate {
-                VStack(spacing: 0) {
-                    Image(systemName: accessorySymbol)
-                        .font(.system(size: 10, weight: .semibold))
-
-                    Text(date, style: .timer)
-                        .font(
-                            .system(
-                                size: 13,
-                                weight: .semibold,
-                                design: .rounded
-                            )
-                        )
-                        .monospacedDigit()
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.45)
-                }
+                accessoryCounterStack(Text(date, style: .timer))
+            } else if let still = stillCounterText {
+                // Phone in use: the frozen stretch, as a plain string, so
+                // the held number stays on screen instead of collapsing to
+                // a bare icon (and never self-ticks while in the hand).
+                accessoryCounterStack(Text(still))
             } else {
                 Image(systemName: "iphone.slash")
                     .font(.system(size: 20, weight: .semibold))
@@ -317,9 +305,28 @@ struct PhoneFreeWidgetEntryView: View {
         .containerBackground(Color.clear, for: .widget)
     }
 
+    private func accessoryCounterStack(_ text: Text) -> some View {
+        VStack(spacing: 0) {
+            Image(systemName: accessorySymbol)
+                .font(.system(size: 10, weight: .semibold))
+
+            text
+                .font(
+                    .system(
+                        size: 13,
+                        weight: .semibold,
+                        design: .rounded
+                    )
+                )
+                .monospacedDigit()
+                .lineLimit(1)
+                .minimumScaleFactor(0.45)
+        }
+    }
+
     private var accessoryRectangular: some View {
         VStack(alignment: .leading, spacing: 0) {
-            Text(accessoryCaption)
+            Text(counterCaption)
                 .font(.system(size: 11, weight: .semibold))
                 .lineLimit(1)
                 .minimumScaleFactor(0.7)
@@ -334,6 +341,21 @@ struct PhoneFreeWidgetEntryView: View {
                         )
                     )
                     .monospacedDigit()
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.6)
+            } else if let still = stillCounterText {
+                // Phone in use: the frozen stretch, as a plain string — the
+                // held number must never be replaced by the start-goal CTA.
+                Text(still)
+                    .font(
+                        .system(
+                            size: 22,
+                            weight: .semibold,
+                            design: .rounded
+                        )
+                    )
+                    .monospacedDigit()
+                    .foregroundStyle(.secondary)
                     .lineLimit(1)
                     .minimumScaleFactor(0.6)
             } else {
@@ -364,6 +386,9 @@ struct PhoneFreeWidgetEntryView: View {
                 } icon: {
                     Image(systemName: accessorySymbol)
                 }
+            } else if let still = stillCounterText {
+                // Phone in use: the held number, not the start-goal CTA.
+                Label(still, systemImage: accessorySymbol)
             } else {
                 Label("Start a phone-free goal", systemImage: "iphone.slash")
             }
@@ -405,7 +430,7 @@ struct PhoneFreeWidgetEntryView: View {
                 }
             } else if let still = stillCounterText {
                 VStack(alignment: .leading, spacing: 4) {
-                    Text(mediumCaption)
+                    Text(counterCaption)
                         .font(.system(size: 9, weight: .bold))
                         .tracking(0.5)
                         .foregroundStyle(.white.opacity(0.7))
