@@ -45,6 +45,7 @@ nonisolated enum PhoneFreeUsage {
     static let bestEverKey = "phoneFreeBestStretch"
     static let bestTodayKey = "phoneFreeBestStretchToday"
     static let bestTodayDayKey = "phoneFreeBestStretchDay"
+    static let stretchEndingsKey = "phoneFreeStretchEndings"
     static let surplusKey = "phoneFreeSurplus"
 
     /// The most free time the bank will hold. An hour is enough to matter and
@@ -95,6 +96,14 @@ nonisolated enum PhoneFreeUsage {
         /// store edits them; every surface (app, widget) reads the same copy,
         /// so they all exclude the same stretches.
         var sleepWindows: [PhoneFreeWindow] = []
+
+        /// How many stretches have ended because the phone went back in hand
+        /// past its grace — counted by exactly the two transitions that mean
+        /// that (a use that ran the counter out, an abandoned session
+        /// settled), and by nothing else: a goal starting, a lock, a wipe are
+        /// not pickups. Shared sessions watch it to learn that the room needs
+        /// to be told. Persisted so a relaunch does not replay old trips.
+        var stretchEndings: Int = 0
 
         /// Today's best finished stretch, or zero on a new day.
         func bestFinishedToday(at now: Date) -> TimeInterval {
@@ -258,6 +267,9 @@ nonisolated enum PhoneFreeUsage {
                 record(frozenInterval, endedAt: usingSince)
                 self.lastCheckIn = now
                 surplus = 0
+                // Past grace with nowhere left to pay from: the stretch is
+                // over because the phone went back in hand.
+                stretchEndings += 1
             }
 
             self.usingSince = nil
@@ -350,6 +362,10 @@ nonisolated enum PhoneFreeUsage {
             copy.lastCheckIn = resetsAt
             copy.usingSince = nil
             copy.surplus = 0
+            // Abandoned means the phone was in hand past every grace — this
+            // settle is a stretch lost to use, so it counts as a pickup the
+            // same way `endUse` running out does.
+            copy.stretchEndings += 1
             return copy
         }
 
@@ -405,7 +421,8 @@ nonisolated enum PhoneFreeUsage {
             bestEver: defaults?.double(forKey: bestEverKey) ?? 0,
             bestToday: defaults?.double(forKey: bestTodayKey) ?? 0,
             bestTodayDay: defaults?.object(forKey: bestTodayDayKey) as? Date,
-            sleepWindows: sleepWindows
+            sleepWindows: sleepWindows,
+            stretchEndings: defaults?.integer(forKey: stretchEndingsKey) ?? 0
         )
     }
 
@@ -432,6 +449,8 @@ nonisolated enum PhoneFreeUsage {
         } else {
             defaults.removeObject(forKey: bestTodayDayKey)
         }
+
+        defaults.set(state.stretchEndings, forKey: stretchEndingsKey)
     }
 
     /// "30 seconds", "1 minute", "2 minutes" — for sentences, where "1m"
