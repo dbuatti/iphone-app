@@ -15,6 +15,28 @@ final class PhoneFreeLiveActivityManager {
 
     private init() {}
 
+    /// Every Live Activity mutation goes through this chain, in call order.
+    /// The store calls these fire-and-forget from synchronous lifecycle code;
+    /// without the chain, two quick changes could each suspend inside their
+    /// awaits and interleave, leaving a stale push landing last — the wrong
+    /// number on the Lock Screen, or a goal that refuses to leave.
+    private var pushChain: Task<Void, Never>?
+
+    /// Queues the work behind whatever is already in flight, and hands back
+    /// the task so an async caller can wait its turn.
+    @discardableResult
+    private func enqueue(
+        _ work: @escaping @MainActor () async -> Void
+    ) -> Task<Void, Never> {
+        let previous = pushChain
+        let task = Task { @MainActor in
+            await previous?.value
+            await work()
+        }
+        pushChain = task
+        return task
+    }
+
     /// Whether the user has Live Activities enabled for this app. Live
     /// Activities are a best-effort addition — the in-app timer works either way.
     var isSupported: Bool {
@@ -38,8 +60,10 @@ final class PhoneFreeLiveActivityManager {
             segments: segments
         )
 
-        Task {
-            await endAll()
+        // Queued, not racing: a goal ending at the same moment this starts
+        // lands first, in the order the two were asked for.
+        enqueue {
+            await self.endAll()
 
             do {
                 _ = try Activity.request(
@@ -90,37 +114,44 @@ final class PhoneFreeLiveActivityManager {
             return
         }
 
+        // Built now, not when the queue reaches us: whichever sync wins the
+        // race, the number on screen is the one from the moment it was asked
+        // for, and the chain puts the asks in order.
         let content = Self.counterContent(for: usage, at: now)
 
-        // A goal's countdown is replaced: this is only called with no goal.
-        for activity in Activity<PhoneFreeWidgetAttributes>.activities
-        where !activity.content.state.countsUp {
-            await activity.end(nil, dismissalPolicy: .immediate)
-        }
+        await enqueue {
+            // A goal's countdown is replaced: this is only called with no goal.
+            for activity in Activity<PhoneFreeWidgetAttributes>.activities
+            where !activity.content.state.countsUp {
+                await activity.end(nil, dismissalPolicy: .immediate)
+            }
 
-        let existing = Activity<PhoneFreeWidgetAttributes>.activities
-            .first { $0.content.state.countsUp }
+            let existing = Activity<PhoneFreeWidgetAttributes>.activities
+                .first { $0.content.state.countsUp }
 
-        let startedAt = PhoneFreeUsage.defaults?
-            .object(forKey: Self.counterStartedKey) as? Date ?? .distantPast
+            let startedAt = PhoneFreeUsage.defaults?
+                .object(forKey: Self.counterStartedKey) as? Date
+                ?? .distantPast
 
-        if let existing, now.timeIntervalSince(startedAt) < counterRefreshAge {
-            await existing.update(content)
-            return
-        }
+            if let existing,
+               now.timeIntervalSince(startedAt) < self.counterRefreshAge {
+                await existing.update(content)
+                return
+            }
 
-        await existing?.end(nil, dismissalPolicy: .immediate)
+            await existing?.end(nil, dismissalPolicy: .immediate)
 
-        do {
-            _ = try Activity.request(
-                attributes: PhoneFreeWidgetAttributes(name: "PhoneFree"),
-                content: content,
-                pushType: nil
-            )
-            PhoneFreeUsage.defaults?.set(now, forKey: Self.counterStartedKey)
-        } catch {
-            // Best effort — the Lock Screen widget shows the same number.
-        }
+            do {
+                _ = try Activity.request(
+                    attributes: PhoneFreeWidgetAttributes(name: "PhoneFree"),
+                    content: content,
+                    pushType: nil
+                )
+                PhoneFreeUsage.defaults?.set(now, forKey: Self.counterStartedKey)
+            } catch {
+                // Best effort — the Lock Screen widget shows the same number.
+            }
+        }.value
     }
 
     /// Takes the away counter off the Lock Screen (turned off in Settings).
@@ -197,7 +228,7 @@ final class PhoneFreeLiveActivityManager {
 
     /// Ends the countdown (goal completed or ended early).
     func end() {
-        Task { await endAll() }
+        enqueue { await self.endAll() }
     }
 
     private func endAll() async {

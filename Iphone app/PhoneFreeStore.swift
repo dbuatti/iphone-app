@@ -1381,7 +1381,9 @@ final class PhoneFreeStore {
         }
 
         // No goal running: the Live Activity becomes the always-on away
-        // counter, showing the same number as the widget and the app.
+        // counter, showing the same number as the widget and the app. The
+        // usage is captured before the hop, and the manager serialises its
+        // pushes, so a quick pair of syncs cannot land out of order.
         let usage = usage
         Task {
             await PhoneFreeLiveActivityManager.shared.showAwayCounter(usage)
