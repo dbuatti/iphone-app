@@ -536,12 +536,21 @@ struct PhoneFreeWidgetLiveActivity: Widget {
         if state.countsUp {
             switch counterPhase(state, isStale: isStale) {
             case .counting(let since):
-                countUp(from: since)
+                // The Dynamic Island is only ever on screen when the phone is
+                // unlocked and in hand, so the away counter must never be seen
+                // ticking up here. Accruing belongs to the Lock Screen — the
+                // surface you look at with the phone already down. When the app
+                // has not yet registered the pickup (it was suspended, so
+                // `beginUse` has not run), freeze the number at the stretch it
+                // has already reached; the app replaces it with the exact frozen
+                // value the instant it catches up. This is what stops the
+                // counter climbing while you are holding the phone.
+                clockText(max(0, Date().timeIntervalSince(since)))
             case .paused(_, _, _, _), .reset(_):
                 if let frozen = state.pausedSeconds {
                     clockText(frozen)
                 } else {
-                    countUp(from: awayAnchor(state))
+                    clockText(max(0, Date().timeIntervalSince(awayAnchor(state))))
                 }
             }
         } else {
