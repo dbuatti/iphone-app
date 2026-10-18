@@ -180,7 +180,10 @@ struct PhoneFreeWidgetLiveActivity: Widget {
             resetsAt: Date,
             shieldLeft: TimeInterval?
         )
-        case reset
+        /// Past the grace and any banked free time. The run is over, but the
+        /// number it earned is still shown — the app never blanks the counter
+        /// to 0:00 while the phone is in the user's hand.
+        case reset(frozen: TimeInterval)
     }
 
     private func counterPhase(
@@ -193,7 +196,7 @@ struct PhoneFreeWidgetLiveActivity: Widget {
         }
 
         if isStale || resetsAt <= Date() {
-            return .reset
+            return .reset(frozen: frozen)
         }
 
         return .paused(
@@ -202,6 +205,21 @@ struct PhoneFreeWidgetLiveActivity: Widget {
             resetsAt: resetsAt,
             shieldLeft: state.shieldLeft
         )
+    }
+
+    /// "12:05" / "3:07:44" as a plain, frozen string. The widget target has no
+    /// access to the app's formatter, so it keeps its own.
+    private func clockText(_ interval: TimeInterval) -> Text {
+        let seconds = max(0, Int(interval.rounded()))
+        let hours = seconds / 3600
+        let minutes = (seconds % 3600) / 60
+        let remainder = seconds % 60
+
+        let text = hours > 0
+            ? String(format: "%d:%02d:%02d", hours, minutes, remainder)
+            : String(format: "%d:%02d", minutes, remainder)
+
+        return Text(text)
     }
 
     /// A clock counting up from `since`, always as h:mm:ss / m:ss. The plain
@@ -330,7 +348,7 @@ struct PhoneFreeWidgetLiveActivity: Widget {
                 }
             }
         case .reset:
-            Text("Starts again when you put it down")
+            Text("Put it down to start the next one")
         }
     }
 
@@ -492,8 +510,8 @@ struct PhoneFreeWidgetLiveActivity: Widget {
                 countUp(from: since)
             case .paused(_, let usingSince, let resetsAt, _):
                 Text(timerInterval: usingSince...resetsAt, countsDown: true)
-            case .reset:
-                Text("0:00")
+            case .reset(let frozen):
+                clockText(frozen)
             }
         } else {
             Text(state.endDate, style: .timer)

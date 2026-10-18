@@ -91,53 +91,80 @@ struct PhoneFreeAwayView: View {
     // MARK: - The number that matters (no goal running)
 
     private var awayHero: some View {
-        VStack(spacing: 14) {
-            TimelineView(.periodic(from: .now, by: 1)) { context in
-                let away = store.awayInterval(at: context.date)
+        TimelineView(.periodic(from: .now, by: 1)) { context in
+            let away = store.awayInterval(at: context.date)
+            let progress = store.gapTargetProgress(at: context.date)
+            let tint = store.isShielded(at: context.date)
+                ? PhoneFreeTheme.reward
+                : PhoneFreeTheme.accent
 
-                VStack(spacing: 16) {
-                    Text(
-                        heroCaption(at: context.date)
-                    )
+            VStack(spacing: 16) {
+                Text(heroCaption(at: context.date))
                     .font(.caption2.weight(.bold))
                     .tracking(1.6)
                     .foregroundStyle(PhoneFreeTheme.muted)
                     .multilineTextAlignment(.center)
 
-                    Text(PhoneFreeFormat.clock(away))
-                        .scaledFont(64, weight: .light, design: .rounded, relativeTo: .largeTitle)
-                        .monospacedDigit()
-                        .minimumScaleFactor(0.5)
-                        .lineLimit(1)
-                        .foregroundStyle(.white)
-                        .accessibilityLabel(PhoneFreeFormat.spoken(away))
+                if store.progressStyle == .ring {
+                    PhoneFreeRingMeter(progress: progress, tint: tint) {
+                        awayNumber(away)
+                    }
+                } else {
+                    awayNumber(away)
 
-                    Rectangle()
-                        .fill(PhoneFreeTheme.cardBorder)
-                        .frame(height: 1)
-                        .padding(.horizontal, 4)
+                    if store.progressStyle == .bar {
+                        PhoneFreeBarMeter(progress: progress, tint: tint)
+                            .accessibilityLabel(
+                                "Progress towards your next target"
+                            )
+                    }
+                }
 
-                    gapTargetBlock(at: context.date, compact: false)
+                Rectangle()
+                    .fill(PhoneFreeTheme.cardBorder)
+                    .frame(height: 1)
+                    .padding(.horizontal, 4)
+
+                gapTargetBlock(at: context.date)
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.horizontal, 18)
+            .padding(.vertical, 26)
+            .background {
+                if store.progressStyle == .water {
+                    PhoneFreeWaterFill(progress: progress, tint: tint)
                 }
             }
-        }
-        .frame(maxWidth: .infinity)
-        .padding(.horizontal, 18)
-        .padding(.vertical, 26)
-        .background(PhoneFreeTheme.card)
-        .clipShape(
-            RoundedRectangle(
-                cornerRadius: PhoneFreeTheme.cornerRadius,
-                style: .continuous
+            .background(PhoneFreeTheme.card)
+            .clipShape(
+                RoundedRectangle(
+                    cornerRadius: PhoneFreeTheme.cornerRadius,
+                    style: .continuous
+                )
             )
-        )
-        .overlay {
-            RoundedRectangle(
-                cornerRadius: PhoneFreeTheme.cornerRadius,
-                style: .continuous
-            )
-            .stroke(PhoneFreeTheme.cardBorder, lineWidth: 1)
+            .overlay {
+                RoundedRectangle(
+                    cornerRadius: PhoneFreeTheme.cornerRadius,
+                    style: .continuous
+                )
+                .stroke(PhoneFreeTheme.cardBorder, lineWidth: 1)
+            }
         }
+    }
+
+    private func awayNumber(_ away: TimeInterval) -> some View {
+        Text(PhoneFreeFormat.clock(away))
+            .scaledFont(
+                64,
+                weight: .light,
+                design: .rounded,
+                relativeTo: .largeTitle
+            )
+            .monospacedDigit()
+            .minimumScaleFactor(0.5)
+            .lineLimit(1)
+            .foregroundStyle(.white)
+            .accessibilityLabel(PhoneFreeFormat.spoken(away))
     }
 
     // MARK: - The number that matters (goal running)
@@ -152,44 +179,21 @@ struct PhoneFreeAwayView: View {
 
             TimelineView(.periodic(from: .now, by: 1)) { context in
                 let remaining = store.goalRemaining(at: context.date)
+                let progress = store.goalProgress(at: context.date)
 
                 VStack(spacing: 18) {
-                    ZStack {
-                        Circle()
-                            .stroke(.white.opacity(0.07), lineWidth: 12)
+                    if store.progressStyle == .ring {
+                        PhoneFreeRingMeter(progress: progress) {
+                            goalNumber(remaining)
+                        }
+                    } else {
+                        goalNumber(remaining)
 
-                        Circle()
-                            .trim(
-                                from: 0,
-                                to: store.goalProgress(at: context.date)
-                            )
-                            .stroke(
-                                PhoneFreeTheme.accent,
-                                style: StrokeStyle(
-                                    lineWidth: 12,
-                                    lineCap: .round
-                                )
-                            )
-                            .rotationEffect(.degrees(-90))
-
-                        VStack(spacing: 6) {
-                            Text(PhoneFreeFormat.clock(remaining))
-                            .scaledFont(40, weight: .light, design: .rounded, relativeTo: .largeTitle)
-                            .monospacedDigit()
-                            .minimumScaleFactor(0.4)
-                            .lineLimit(1)
-                            .foregroundStyle(.white)
-                            .accessibilityLabel(
-                                "\(PhoneFreeFormat.spoken(remaining)) remaining"
-                            )
-
-                            Text("REMAINING")
-                                .scaledFont(10, weight: .bold, relativeTo: .caption2)
-                                .tracking(1.8)
-                                .foregroundStyle(PhoneFreeTheme.muted)
+                        if store.progressStyle == .bar {
+                            PhoneFreeBarMeter(progress: progress)
+                                .accessibilityLabel("Goal progress")
                         }
                     }
-                    .frame(width: 210, height: 210)
 
                     Text(
                         store.usage.isUsing(at: context.date)
@@ -204,26 +208,55 @@ struct PhoneFreeAwayView: View {
                     .font(.footnote.weight(.medium))
                     .foregroundStyle(PhoneFreeTheme.accent)
 
-                    gapTargetBlock(at: context.date, compact: true)
+                    gapTargetBlock(at: context.date)
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.horizontal, 18)
+                .padding(.vertical, 26)
+                .background {
+                    if store.progressStyle == .water {
+                        PhoneFreeWaterFill(progress: progress)
+                    }
+                }
+                .background(PhoneFreeTheme.card)
+                .clipShape(
+                    RoundedRectangle(
+                        cornerRadius: PhoneFreeTheme.cornerRadius,
+                        style: .continuous
+                    )
+                )
+                .overlay {
+                    RoundedRectangle(
+                        cornerRadius: PhoneFreeTheme.cornerRadius,
+                        style: .continuous
+                    )
+                    .stroke(PhoneFreeTheme.cardBorder, lineWidth: 1)
                 }
             }
         }
-        .frame(maxWidth: .infinity)
-        .padding(.horizontal, 18)
-        .padding(.vertical, 26)
-        .background(PhoneFreeTheme.card)
-        .clipShape(
-            RoundedRectangle(
-                cornerRadius: PhoneFreeTheme.cornerRadius,
-                style: .continuous
-            )
-        )
-        .overlay {
-            RoundedRectangle(
-                cornerRadius: PhoneFreeTheme.cornerRadius,
-                style: .continuous
-            )
-            .stroke(PhoneFreeTheme.cardBorder, lineWidth: 1)
+    }
+
+    private func goalNumber(_ remaining: TimeInterval) -> some View {
+        VStack(spacing: 6) {
+            Text(PhoneFreeFormat.clock(remaining))
+                .scaledFont(
+                    40,
+                    weight: .light,
+                    design: .rounded,
+                    relativeTo: .largeTitle
+                )
+                .monospacedDigit()
+                .minimumScaleFactor(0.4)
+                .lineLimit(1)
+                .foregroundStyle(.white)
+                .accessibilityLabel(
+                    "\(PhoneFreeFormat.spoken(remaining)) remaining"
+                )
+
+            Text("REMAINING")
+                .scaledFont(10, weight: .bold, relativeTo: .caption2)
+                .tracking(1.8)
+                .foregroundStyle(PhoneFreeTheme.muted)
         }
     }
 
@@ -360,9 +393,12 @@ struct PhoneFreeAwayView: View {
     // This names the next rung of the ladder in words, shows how close it is,
     // and — when the run happening right now has beaten every finished one —
     // says so. Never framed as something to lose.
+    //
+    // The progress *picture* lives in the hero above, in whichever style the
+    // user chose, so this stays words only.
 
     @ViewBuilder
-    private func gapTargetBlock(at date: Date, compact: Bool) -> some View {
+    private func gapTargetBlock(at date: Date) -> some View {
         VStack(spacing: 9) {
             if let target = store.nextGapTarget(at: date) {
                 PhoneFreeAdaptiveStack(
@@ -381,10 +417,6 @@ struct PhoneFreeAwayView: View {
                         .font(.system(.subheadline, design: .rounded, weight: .semibold))
                         .monospacedDigit()
                         .foregroundStyle(.white)
-                }
-
-                if !compact {
-                    progressBar(store.gapTargetProgress(at: date))
                 }
 
                 VStack(spacing: 4) {
@@ -786,7 +818,7 @@ struct PhoneFreeAwayView: View {
         }
 
         return store.usage.hasReset(at: date)
-            ? "STARTS WHEN YOU PUT YOUR PHONE DOWN"
+            ? "PUT IT DOWN TO START THE NEXT ONE"
             : "PAUSED — YOU'RE ON YOUR PHONE"
     }
 
@@ -829,7 +861,8 @@ struct PhoneFreeAwayView: View {
                         VStack(alignment: .leading, spacing: 4) {
                             Text(
                                 reset
-                                    ? "Your timer started again"
+                                    ? "Your streak restarts when you put it "
+                                        + "down"
                                     : (shielded
                                         ? "Free time is protecting your "
                                             + "streak"
@@ -867,16 +900,16 @@ struct PhoneFreeAwayView: View {
                                 ? "Free time left before your timer resets"
                                 : "Time left before your timer resets"
                         )
-
-                        // No button: the only way to put the phone down is to
-                        // lock it, and a button here would pretend otherwise.
-                        Label(
-                            "Press the side button to lock your phone",
-                            systemImage: "lock"
-                        )
-                        .font(.footnote.weight(.medium))
-                        .foregroundStyle(tint)
                     }
+
+                    // No button: the only way to put the phone down is to
+                    // lock it, and a button here would pretend otherwise.
+                    Label(
+                        "Press the side button to lock your phone",
+                        systemImage: "lock"
+                    )
+                    .font(.footnote.weight(.medium))
+                    .foregroundStyle(tint)
                 }
             }
         }
@@ -889,8 +922,8 @@ struct PhoneFreeAwayView: View {
         left: TimeInterval
     ) -> String {
         if reset {
-            return "That's okay. It counts up again from the moment you put "
-                + "your phone down."
+            return "That's okay. The stretch above counts towards your "
+                + "record, and locking your phone now starts the next one."
         }
 
         if shielded {

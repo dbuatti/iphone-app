@@ -149,9 +149,11 @@ struct PhoneFreeProvider: TimelineProvider {
             lastCheckIn: awayAnchor,
             nextTargetSeconds: PhoneFreeTargets.next(after: gap),
             bestGapSeconds: bestGapSeconds,
-            pausedSeconds: using && !usage.hasReset(at: now)
-                ? usage.frozenInterval
-                : nil,
+            // The frozen stretch stays on screen even after the run has ended,
+            // so the number is never blanked to 0:00 while the phone is still
+            // in the user's hand. `heldAtZero` still flags the reset for the
+            // caption.
+            pausedSeconds: using ? usage.frozenInterval : nil,
             heldAtZero: usage.hasReset(at: now)
         )
     }
@@ -238,12 +240,12 @@ struct PhoneFreeWidgetEntryView: View {
         return "SINCE YOU LAST USED YOUR PHONE"
     }
 
-    /// The counter while it is not counting: the frozen stretch, or zero.
+    /// The counter while it is not counting: always the frozen stretch, even
+    /// once the run has ended. The number is never blanked while the phone is
+    /// still in the user's hand.
     private var stillCounterText: String? {
-        if let paused = entry.pausedSeconds {
-            return Self.clock(paused)
-        }
-        return entry.heldAtZero ? "0:00" : nil
+        guard let paused = entry.pausedSeconds else { return nil }
+        return Self.clock(paused)
     }
 
     private static func clock(_ interval: TimeInterval) -> String {

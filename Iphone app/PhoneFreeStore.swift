@@ -167,6 +167,15 @@ final class PhoneFreeStore {
         }
     }
 
+    /// How progress towards a goal or the next target is drawn. Purely how it
+    /// looks — the numbers and the rules do not change. Chosen in Settings.
+    var progressStyle: PhoneFreeProgressStyle = .water {
+        didSet {
+            guard didLoad else { return }
+            save()
+        }
+    }
+
     /// Plays the completion bell, if the user wants it. Called when a timer
     /// finishes while the app is open; the notification carries it when it is
     /// not.
@@ -206,6 +215,16 @@ final class PhoneFreeStore {
     private var lastCheckInGateShownAt: Date?
     private var didLoad = false
 
+    /// When PhoneFree last left the foreground. It is the last moment the app
+    /// can be sure the phone was still being held, so it is where a session
+    /// broken by an unobserved lock is closed.
+    private var backgroundedAt: Date?
+
+    /// `true` once the device has been seen locked during the current absence.
+    /// iOS does not deliver the lock signal to a suspended app, so an open
+    /// session can survive a lock — this is what lets the unlock put it right.
+    private var wasLockedWhileAway = false
+
     /// Below this, opening the app is just the app; it is not worth friction.
     private let checkInGateThreshold: TimeInterval = 60
 
@@ -224,6 +243,12 @@ final class PhoneFreeStore {
         // The Shortcuts actions may have changed the counter while the app
         // was in the background.
         reloadUsage()
+
+        // If the device was locked while PhoneFree was suspended, the "put
+        // down" signal never arrived and an open session is still on the
+        // books. Close it before anything reads the number. Done here as well
+        // as on unlock, because the two signals can arrive in either order.
+        closeSessionInterruptedByLock(at: Date())
 
         // No bell here: a goal that ended while the app was closed has already
         // rung its notification, and ringing again on the way back in would be
@@ -289,6 +314,8 @@ final class PhoneFreeStore {
         isInForeground = false
 
         let now = Date()
+        backgroundedAt = now
+        wasLockedWhileAway = false
 
         if UIApplication.shared.isProtectedDataAvailable {
             // Still unlocked: still in use. The session stays open, so the
@@ -300,6 +327,7 @@ final class PhoneFreeStore {
         } else {
             // Locked: the phone went down. The counter starts again — or
             // carries on, if this was inside the grace period.
+            wasLockedWhileAway = true
             usage.endUse(at: now)
             PhoneFreeUseReminders.cancel()
         }
@@ -312,7 +340,10 @@ final class PhoneFreeStore {
     /// app happens to be, so the use session ends and the counter starts
     /// counting the time away again from this moment.
     func handleDeviceLocked() {
-        usage.endUse(at: Date())
+        let now = Date()
+        wasLockedWhileAway = true
+        backgroundedAt = backgroundedAt ?? now
+        usage.endUse(at: now)
         PhoneFreeUseReminders.cancel()
         save()
         syncLockScreenCounter()
@@ -322,9 +353,39 @@ final class PhoneFreeStore {
     /// starts so the counter freezes — but `lastCheckIn` is left untouched,
     /// so the away gap the check-in gate reports is still the honest one.
     func handleDeviceUnlocked() {
-        usage.beginUse(at: Date())
+        let now = Date()
+
+        // An unlock proves a lock happened, and the lock may have come while
+        // PhoneFree was suspended and could not see it. Close any session that
+        // outlived the last moment the app saw the user, so the locked stretch
+        // counts as time away rather than time on the phone. Without this, a
+        // stretch the Lock Screen was happily counting up is thrown away the
+        // instant the app is opened.
+        wasLockedWhileAway = true
+        closeSessionInterruptedByLock(at: now)
+
+        usage.beginUse(at: now)
         save()
         syncLockScreenCounter()
+    }
+
+    /// Closes a use session that is still open even though the device has
+    /// been locked since — the "put down" signal PhoneFree never received.
+    ///
+    /// The lock moment itself is unknowable from here, so the session is
+    /// closed at the last moment the app saw the user, which is the generous
+    /// reading: everything after that counts as time away. It is deliberately
+    /// narrow. It only fires when a lock is *known* to have happened and the
+    /// session predates it, so a plain app-switch keeps its session exactly as
+    /// before.
+    private func closeSessionInterruptedByLock(at now: Date) {
+        guard wasLockedWhileAway,
+              let backgroundedAt,
+              let usingSince = usage.usingSince,
+              usingSince <= backgroundedAt,
+              usage.isUsing(at: now) else { return }
+
+        usage.endUse(at: max(usingSince, backgroundedAt))
     }
 
     /// Re-reads the counter that the Shortcuts actions share with the app.
@@ -1200,6 +1261,11 @@ final class PhoneFreeStore {
             )
         }
 
+        if let saved = defaults.string(forKey: "phoneFreeProgressStyle"),
+           let style = PhoneFreeProgressStyle(rawValue: saved) {
+            progressStyle = style
+        }
+
         goalActive = defaults.bool(forKey: "phoneFreeGoalActive")
 
         if let timestamp = defaults.object(
@@ -1273,6 +1339,7 @@ final class PhoneFreeStore {
             chimeOverridesSilent,
             forKey: "phoneFreeChimeOverridesSilent"
         )
+        defaults.set(progressStyle.rawValue, forKey: "phoneFreeProgressStyle")
 
         WidgetCenter.shared.reloadAllTimelines()
     }

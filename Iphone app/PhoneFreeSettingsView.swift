@@ -28,6 +28,8 @@ struct PhoneFreeSettingsView: View {
 
                 interruptSection
 
+                progressSection
+
                 soundSection
 
                 lockScreenSection
@@ -171,6 +173,77 @@ struct PhoneFreeSettingsView: View {
                 }
             }
         }
+    }
+
+    // MARK: - How progress looks
+
+    /// One preference, three shapes. Shown as a list rather than a picker so
+    /// each choice can say what it does — the point is that it is safe to try.
+    private var progressSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            PhoneFreeSectionLabel("HOW PROGRESS LOOKS")
+
+            PhoneFreeCard {
+                VStack(alignment: .leading, spacing: 14) {
+                    Text(
+                        "Your goal, and the climb to your next target, can fill "
+                        + "up in whichever shape you like. The number never "
+                        + "changes — only the picture."
+                    )
+                    .font(.footnote)
+                    .foregroundStyle(PhoneFreeTheme.muted)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                    ForEach(PhoneFreeProgressStyle.allCases) { style in
+                        optionRow(style)
+                    }
+                }
+            }
+        }
+    }
+
+    private func optionRow(_ style: PhoneFreeProgressStyle) -> some View {
+        let selected = store.progressStyle == style
+
+        return Button {
+            store.play(.selection)
+            store.progressStyle = style
+        } label: {
+            HStack(alignment: .top, spacing: 12) {
+                Image(systemName: style.symbol)
+                    .font(.callout)
+                    .foregroundStyle(PhoneFreeTheme.accent)
+                    .frame(width: 24)
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(style.title)
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(.white)
+
+                    Text(style.detail)
+                        .font(.caption)
+                        .foregroundStyle(PhoneFreeTheme.muted)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+
+                Spacer(minLength: 0)
+
+                Image(
+                    systemName: selected
+                        ? "checkmark.circle.fill"
+                        : "circle"
+                )
+                .foregroundStyle(
+                    selected
+                        ? PhoneFreeTheme.accent
+                        : PhoneFreeTheme.muted.opacity(0.5)
+                )
+            }
+            .frame(minHeight: 44)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityAddTraits(selected ? [.isSelected] : [])
     }
 
     // MARK: - The bell

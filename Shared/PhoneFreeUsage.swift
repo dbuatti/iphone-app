@@ -14,8 +14,11 @@
 //
 //  While the phone is in use the counter is frozen. Put it down within the
 //  grace period (60 seconds by default) and the stretch carries on as if those
-//  seconds never happened. Still on it after the grace period, and the counter
-//  goes to zero and stays there until the phone is put down.
+//  seconds never happened. Still on it after the grace period and the run is
+//  over: it is recorded, and the counter restarts from zero the moment the
+//  phone is actually put down. Until then the earned stretch stays on screen —
+//  it is never blanked to 0:00 while the phone is still in hand, because on
+//  this app the number *is* the encouragement.
 //
 //  Surplus is the reward layer on top of that. Finishing a phone-free goal
 //  banks free phone time; while it lasts it pays for use *past* the grace
@@ -157,9 +160,15 @@ nonisolated enum PhoneFreeUsage {
         }
 
         /// The number on screen.
+        ///
+        /// While the phone is in use this is the frozen stretch, even once the
+        /// grace period has run out. The number never drops to 0:00 in the
+        /// user's hand: the run is recorded and restarted when the phone is
+        /// actually put down, so the earned time stays visible — and worth
+        /// defending — right up to that moment.
         func awayInterval(at now: Date) -> TimeInterval {
             if isUsing(at: now) {
-                return hasReset(at: now) ? 0 : frozenInterval
+                return frozenInterval
             }
 
             let settled = settled(at: now)
@@ -241,8 +250,13 @@ nonisolated enum PhoneFreeUsage {
                 self.lastCheckIn = lastCheckIn.addingTimeInterval(used)
                 surplus = max(0, surplus - max(0, used - resetAfter))
             } else {
-                record(frozenInterval, endedAt: usingSince)
-                lastCheckIn = now
+                // The whole shield is spent, so the run is over and recorded
+                // now — but the number it earned is kept on screen. The
+                // counter is never blanked to 0:00 while the phone is still in
+                // the user's hand; it restarts when the phone goes down.
+                let frozen = frozenInterval
+                record(frozen, endedAt: usingSince)
+                lastCheckIn = now.addingTimeInterval(-frozen)
                 surplus = 0
             }
 
