@@ -20,5 +20,9 @@
 		<key>UIColorName</key>
 		<string>LaunchBackground</string>
 	</dict>
+	<key>BGTaskSchedulerPermittedIdentifiers</key>
+	<array>
+		<string>com.danielebuattipersonalteam.Iphoneapp.lockcheck</string>
+	</array>
 </dict>
 </plist>

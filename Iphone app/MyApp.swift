@@ -1,4 +1,5 @@
 
+import BackgroundTasks
 import SwiftUI
 import UserNotifications
 
@@ -14,6 +15,23 @@ final class PhoneFreeAppDelegate: NSObject, UIApplicationDelegate,
             [UIApplication.LaunchOptionsKey: Any]? = nil
     ) -> Bool {
         UNUserNotificationCenter.current().delegate = self
+
+        // Registering before this method returns is mandatory, and the
+        // identifier must also appear in Info.plist's
+        // BGTaskSchedulerPermittedIdentifiers or the call raises. This is
+        // the wake that catches a lock landing while the app is suspended —
+        // see PhoneFreeStore.performLockCheck().
+        BGTaskScheduler.shared.register(
+            forTaskWithIdentifier: PhoneFreeStore.lockCheckTaskID,
+            using: nil
+        ) { task in
+            guard let refresh = task as? BGAppRefreshTask else {
+                task.setTaskCompleted(success: false)
+                return
+            }
+            PhoneFreeStore.handleLockCheckRefresh(refresh)
+        }
+
         return true
     }
 

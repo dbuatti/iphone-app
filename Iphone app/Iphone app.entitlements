@@ -6,5 +6,9 @@
 	<array>
 		<string>group.com.danielebuatti.phonefree</string>
 	</array>
+	<key>com.apple.developer.background-modes</key>
+	<array>
+		<string>fetch</string>
+	</array>
 </dict>
 </plist>

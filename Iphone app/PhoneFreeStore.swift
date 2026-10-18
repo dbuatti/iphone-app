@@ -15,8 +15,10 @@
 //  one, and honest numbers.
 //
 
+import BackgroundTasks
 import Foundation
 import Observation
+import os
 import UIKit
 import WidgetKit
 
@@ -65,6 +67,15 @@ struct PhoneFreeDayStat: Identifiable, Hashable {
 final class PhoneFreeStore {
 
     static let appGroupID = "group.com.danielebuatti.phonefree"
+
+    /// The instance the running scene owns. A background wake — a BGTask
+    /// launch handler runs before any scene code — must act on that
+    /// instance's in-memory state, not on a second copy loaded from
+    /// defaults that would then disagree with the UI about the open
+    /// session. If the process was cold-started by the task there is no
+    /// scene to disagree with, and a fresh instance loads the persisted
+    /// state instead.
+    @ObservationIgnored private(set) static weak var live: PhoneFreeStore?
 
     /// Remembers when the phone was last in hand across launches, so an
     /// absence PhoneFree slept (or was killed) through is not mistaken for
@@ -232,7 +243,8 @@ final class PhoneFreeStore {
 
     /// Watches the lock state itself for a little while after the app leaves
     /// the screen, for the one lock signal iOS swallows (see
-    /// `startLockWatchdog`).
+    /// `startLockWatchdog`). For locks that land later there is the periodic
+    /// background check — see `performLockCheck()`.
     @ObservationIgnored private var lockWatchdogTask: Task<Void, Never>?
 
     /// The background-execution assertion that keeps the watchdog awake; iOS
@@ -247,6 +259,7 @@ final class PhoneFreeStore {
     private let checkInGateMaxGap: TimeInterval = 6 * 3600
 
     init() {
+        PhoneFreeStore.live = self
         load()
     }
 
@@ -256,6 +269,13 @@ final class PhoneFreeStore {
     func handleBecameActive() {
         // The app is awake again, so the watchdog has nothing left to catch.
         stopLockWatchdog()
+
+        // The app's own observers watch from here on; the periodic
+        // background check would only burn refresh budget waking a process
+        // that is already looking at the device.
+        BGTaskScheduler.shared.cancel(
+            taskRequestWithIdentifier: Self.lockCheckTaskID
+        )
 
         // Reminders are the only thing that can reach the user once they leave
         // the app, so whether they will arrive is worth knowing before the
@@ -362,6 +382,7 @@ final class PhoneFreeStore {
             // invisible to an app the user has just left.
             if usage.isUsing(at: now) {
                 startLockWatchdog()
+                scheduleLockCheck(after: Self.lockCheckFirstDelay)
             }
         } else {
             // Locked: the phone went down. The counter starts again — or
@@ -494,6 +515,119 @@ final class PhoneFreeStore {
         guard interrupted else { return }
 
         usage.endUse(at: max(usingSince, backgroundedAt))
+    }
+
+    // MARK: - Background lock check
+
+    /// The periodic check that catches what the watchdog cannot.
+    ///
+    /// iOS gives a backgrounding app only the ~25 seconds the watchdog polls
+    /// over. A lock that lands after that — switch apps, pocket the phone a
+    /// minute later — is never delivered to a suspended app, so the session,
+    /// the countdown reminders and the Lock Screen push all keep assuming the
+    /// phone is in the hand: reminders land on the Lock Screen over a phone
+    /// that is already on the table, and the counter never restarts. A
+    /// BGAppRefreshTask is the one wake iOS still grants a suspended app, and
+    /// its launch handler runs where the device's lock state is readable.
+    static let lockCheckTaskID =
+        "com.danielebuattipersonalteam.Iphoneapp.lockcheck"
+
+    /// This wake happens entirely unseen — no scene, no user — so a single
+    /// line is the only evidence it ran. Worth having when a user reports
+    /// the counter not restarting; visible in Console for this subsystem.
+    private static let lockCheckLog = Logger(
+        subsystem: "com.danielebuattipersonalteam.Iphoneapp",
+        category: "lockcheck"
+    )
+
+    /// First check after leaving the screen: just after the watchdog gives
+    /// up, because that is when an unseen lock first becomes possible.
+    private static let lockCheckFirstDelay: TimeInterval = 60
+
+    /// Cadence between checks when nothing has been seen. A lock is only
+    /// ever going to be found once — the re-arm keeps the detector warm and
+    /// the Lock Screen push fresh, at a rate the refresh budget allows.
+    private static let lockCheckRescheduleDelay: TimeInterval = 15 * 60
+
+    /// Called from the AppDelegate's BGTaskScheduler registration.
+    ///
+    /// The completion may be claimed by the work below or by the system's
+    /// expiration callback, whichever comes first — never both, because
+    /// completing a BGTask twice is a crash.
+    static func handleLockCheckRefresh(_ task: BGAppRefreshTask) {
+        let completion = PhoneFreeTaskCompletion(task)
+        task.expirationHandler = { completion.finish(success: false) }
+
+        Task { @MainActor in
+            let store = live ?? PhoneFreeStore()
+            store.performLockCheck()
+            completion.finish(success: true)
+        }
+    }
+
+    private func scheduleLockCheck(after delay: TimeInterval) {
+        let request = BGAppRefreshTaskRequest(
+            identifier: Self.lockCheckTaskID
+        )
+        request.earliestBeginDate = Date().addingTimeInterval(delay)
+
+        do {
+            try BGTaskScheduler.shared.submit(request)
+        } catch {
+            // Refused for now (budget, throttling). The next backgrounding
+            // arms the check again.
+        }
+    }
+
+    /// The wake itself: read the lock state, and act on it exactly like the
+    /// unlock recovery does — at the last moment the app saw the user.
+    private func performLockCheck() {
+        let now = Date()
+
+        guard !UIApplication.shared.isProtectedDataAvailable else {
+            // Unlocked: nothing is proven — the phone may be in the hand or
+            // lying open on the table. Both are the status quo, so the
+            // session and its reminders stay exactly as they are.
+            Self.lockCheckLog.info(
+                "lock check: still unlocked — nothing to close"
+            )
+
+            // Re-arm only while the app is still away. If this launch was
+            // already in flight when the app came to the front,
+            // handleBecameActive's cancel ran before this handler's re-arm,
+            // and without this check a stale request would keep waking the
+            // app for as long as it stays open.
+            if !isInForeground {
+                scheduleLockCheck(after: Self.lockCheckRescheduleDelay)
+            }
+            return
+        }
+
+        Self.lockCheckLog.info(
+            "lock check: device locked — closing the session and repushing"
+        )
+
+        // Locked: the put-down signal iOS withheld. Everything after the
+        // last moment the app saw the user counts as time away — the same
+        // generous reading the unlock recovery takes.
+        wasLockedWhileAway = true
+        closeSessionInterruptedByLock(at: now)
+
+        // A session that outlived the whole shield never reaches endUse
+        // (the gate above requires it to still be running); settling it is
+        // what stops every later reader claiming the phone is in use.
+        usage = usage.settled(at: now)
+
+        // The countdown reminders were armed for a phone in the hand. On a
+        // table they are simply wrong, and the far-future ones — shield
+        // nudges every few minutes, the reset one on the second — would
+        // keep landing on the Lock Screen for hours.
+        PhoneFreeUseReminders.cancel()
+
+        save()
+        syncLockScreenCounter()
+
+        scheduleLockCheck(after: Self.lockCheckRescheduleDelay)
     }
 
     /// Re-reads the counter that the Shortcuts actions share with the app.
@@ -1543,5 +1677,29 @@ final class PhoneFreeStore {
         defaults.set(progressStyle.rawValue, forKey: "phoneFreeProgressStyle")
 
         WidgetCenter.shared.reloadAllTimelines()
+    }
+}
+
+/// Completes a background task exactly once, whether the handler's own work
+/// gets there or the system calls time first. `BGTask` treats a second
+/// completion as a programming error, and the two paths race by design.
+private final class PhoneFreeTaskCompletion: @unchecked Sendable {
+    private let lock = NSLock()
+    private var finished = false
+    private let task: BGTask
+
+    init(_ task: BGTask) {
+        self.task = task
+    }
+
+    func finish(success: Bool) {
+        lock.lock()
+        let first = !finished
+        finished = true
+        lock.unlock()
+
+        if first {
+            task.setTaskCompleted(success: success)
+        }
     }
 }
