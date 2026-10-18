@@ -1299,15 +1299,21 @@ final class PhoneFreeStore {
         goalActive = false
         goalStart = nil
         goalEnd = nil
-        usage.restart(at: Date())
-        usage.surplus = 0
+        backgroundedAt = nil
+
+        // A full wipe takes the record with it: `restart` would have kept
+        // bestEver — and even *set* it with the stretch being erased — which
+        // is how a cleared app kept showing an old "record" line forever.
+        usage.wipe()
         surplusAward = nil
 
         save()
         PhoneFreeLiveActivityManager.shared.end()
+        PhoneFreeLiveActivityManager.shared.forgetCounterStart()
         PhoneFreeGoalNudges.cancel()
         PhoneFreeGoalChimes.cancel()
         PhoneFreeUseReminders.cancel()
+        syncLockScreenCounter()
     }
 
     /// Forget today only. Useful for people who find a bad start hard to
@@ -1320,12 +1326,17 @@ final class PhoneFreeStore {
         goalActive = false
         goalStart = nil
         goalEnd = nil
-        usage.restart(at: Date())
+
+        // Forget without recording: the stretch being erased must not write
+        // itself into the record on the way out. Today's record goes with
+        // today's data; the all-time one stays.
+        usage.forget(at: Date())
         usage.surplus = 0
         surplusAward = nil
 
         save()
         PhoneFreeLiveActivityManager.shared.end()
+        PhoneFreeLiveActivityManager.shared.forgetCounterStart()
         PhoneFreeGoalNudges.cancel()
         PhoneFreeGoalChimes.cancel()
         PhoneFreeUseReminders.cancel()
@@ -1409,8 +1420,13 @@ final class PhoneFreeStore {
         showingOnboarding = !defaults.bool(forKey: "phoneFreeOnboarded")
 
         // Records used to be worked out from app-open times. Carry the old
-        // best over once, so upgrading never wipes someone's record.
-        if usage.bestEver == 0 {
+        // best over once, so upgrading never wipes someone's record. Guarded
+        // by the key's *absence*, not by the value being zero: a deliberate
+        // wipe writes 0, and must stay zeroed instead of being rebuilt from
+        // the next long gap between two app opens — which is how a cleared
+        // app kept resurrecting a sleep-sized "record".
+        if usage.bestEver == 0,
+           defaults.object(forKey: PhoneFreeUsage.bestEverKey) == nil {
             let opens = events
                 .filter { $0.kind == PhoneFreeEventKind.pickup }
                 .map(\.timestamp)

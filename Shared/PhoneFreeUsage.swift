@@ -231,6 +231,25 @@ nonisolated enum PhoneFreeUsage {
             usingSince = nil
         }
 
+        /// The counter starts again from zero right now, recording nothing on
+        /// the way out. Forgetting the data must not *write* new data — the
+        /// stretch being erased is exactly the kind that would otherwise set
+        /// (and keep) a record.
+        mutating func forget(at now: Date) {
+            lastCheckIn = now
+            usingSince = nil
+            bestToday = 0
+            bestTodayDay = nil
+        }
+
+        /// Back to a fresh install, with no record of anything — used by
+        /// "Clear all data". `restart` would leave the all-time record behind;
+        /// this takes it too, because a wiped history cannot vouch for it.
+        mutating func wipe() {
+            self = State()
+            lastCheckIn = Date()
+        }
+
         /// Called every so often while PhoneFree itself is open — a use signal
         /// that is certain, so the session must never be given up on as
         /// abandoned. Past the grace, the visit charges the surplus and the
@@ -344,6 +363,8 @@ nonisolated enum PhoneFreeUsage {
 
         if let day = state.bestTodayDay {
             defaults.set(day, forKey: bestTodayDayKey)
+        } else {
+            defaults.removeObject(forKey: bestTodayDayKey)
         }
     }
 

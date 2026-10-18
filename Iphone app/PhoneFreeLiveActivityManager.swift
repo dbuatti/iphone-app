@@ -131,6 +131,13 @@ final class PhoneFreeLiveActivityManager {
         }
     }
 
+    /// Forgets when the counter activity was last started, so the next one
+    /// is a fresh request rather than an update of anything old. Used by the
+    /// data wipes.
+    func forgetCounterStart() {
+        PhoneFreeUsage.defaults?.removeObject(forKey: Self.counterStartedKey)
+    }
+
     private static func counterContent(
         for usage: PhoneFreeUsage.State,
         at now: Date
