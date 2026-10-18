@@ -268,37 +268,62 @@ struct PhoneFreeWidgetLiveActivity: Widget {
                     .tracking(2.6)
                     .foregroundStyle(LAColor.violet)
 
-                if let frozen = state.pausedSeconds {
-                    clockText(frozen)
-                        .font(.system(size: 48, weight: .bold, design: .rounded))
-                        .monospacedDigit()
-                        .foregroundStyle(.white)
-                        .minimumScaleFactor(0.5)
-                        .lineLimit(1)
-                } else {
-                    countUp(from: awayAnchor(state))
-                        .font(.system(size: 48, weight: .bold, design: .rounded))
-                        .monospacedDigit()
-                        .foregroundStyle(.white)
-                        .minimumScaleFactor(0.5)
-                        .lineLimit(1)
-                }
+                lockScreenNumber(state)
+                    .font(.system(size: 48, weight: .bold, design: .rounded))
+                    .monospacedDigit()
+                    .foregroundStyle(.white)
+                    .minimumScaleFactor(0.5)
+                    .lineLimit(1)
 
-                Text(
-                    shielded
-                        ? "Free time is protecting your streak"
-                        : "On your phone"
-                )
-                .font(.system(size: 13, weight: .semibold))
-                .foregroundStyle(.white.opacity(0.7))
-                .lineLimit(1)
-                .minimumScaleFactor(0.7)
+                Text(lockScreenCaption(state))
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(.white.opacity(0.7))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.7)
             }
 
             Spacer(minLength: 0)
         }
         .padding(.horizontal, 20)
         .padding(.vertical, 18)
+    }
+
+    /// The big number on the Lock Screen. It only ever shows when the phone is
+    /// down, so it must always end up ticking — never a frozen frame that later
+    /// jumps. Within the grace window the stretch is still at stake, so it holds
+    /// the earned number. Once grace (and any banked time) has run out the run is
+    /// over: because the Lock Screen is the put-down surface, it starts ticking
+    /// on its own from the reset moment, even before the app has registered the
+    /// put-down. That is what stops it freezing at a stale value and then
+    /// jumping. Once the put-down is registered it ticks from there instead.
+    @ViewBuilder
+    private func lockScreenNumber(
+        _ state: PhoneFreeWidgetAttributes.ContentState
+    ) -> some View {
+        let now = Date()
+        let pastReset = state.resetsAt.map { $0 <= now } ?? false
+
+        if let frozen = state.pausedSeconds, !pastReset {
+            clockText(frozen)
+        } else if state.pausedSeconds != nil, let resetsAt = state.resetsAt {
+            countUp(from: resetsAt)
+        } else {
+            countUp(from: awayAnchor(state))
+        }
+    }
+
+    /// One line under the number, in words. The Lock Screen is the surface you
+    /// look at with the phone already down, so it never says "on your phone" —
+    /// that belongs to the Dynamic Island. Here it either names the reward that
+    /// is paying for the session, or states the plain away fact.
+    private func lockScreenCaption(
+        _ state: PhoneFreeWidgetAttributes.ContentState
+    ) -> String {
+        if state.shieldLeft != nil {
+            return "Free time is protecting your streak"
+        }
+
+        return "Since you last used your phone"
     }
 
     /// Where the Lock Screen counts up from. With a session open it is the
