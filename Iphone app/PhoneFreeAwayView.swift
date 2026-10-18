@@ -769,7 +769,7 @@ struct PhoneFreeAwayView: View {
         // home screen becomes one more number to check and feel bad about.
         PhoneFreeAdaptiveStack(spacing: 12, verticalAlignment: .top) {
             statCard(
-                value: PhoneFreeFormat.clock(store.bestGapToday),
+                value: PhoneFreeFormat.clock(store.bestGapTodayDisplay),
                 label: "BEST STRETCH TODAY",
                 symbol: "star"
             )

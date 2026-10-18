@@ -124,7 +124,7 @@ struct PhoneFreeProgressView: View {
 
             PhoneFreeAdaptiveStack(spacing: 12) {
                 statCard(
-                    value: PhoneFreeFormat.clock(store.bestGapToday),
+                    value: PhoneFreeFormat.clock(store.bestGapTodayDisplay),
                     label: "LONGEST PAUSE TODAY",
                     symbol: "hourglass"
                 )

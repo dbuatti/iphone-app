@@ -1085,7 +1085,26 @@ final class PhoneFreeStore {
     /// or the one still running. Kept by the shared clock, so it always agrees
     /// with the counter the user is looking at.
     var bestGapToday: TimeInterval {
-        max(usage.bestFinishedToday(at: Date()), awayInterval())
+        let raw = max(usage.bestFinishedToday(at: Date()), awayInterval())
+        // Don't let sleep stretches wildly skew today's best in displays.
+        let sleepCap: TimeInterval = 8 * 3600
+        if raw > sleepCap {
+            let finished = usage.bestFinishedToday(at: Date())
+            // If current stretch is the culprit and it's overnight-like, cap it.
+            // If finished was already > cap (rare), also cap for display.
+            if raw == awayInterval() {
+                return sleepCap
+            }
+            return min(finished, sleepCap)
+        }
+        return raw
+    }
+
+    /// Display version of best gap today that caps obviously overnight stretches.
+    var bestGapTodayDisplay: TimeInterval {
+        let raw = max(usage.bestFinishedToday(at: Date()), awayInterval())
+        let sleepCap: TimeInterval = 8 * 3600
+        return min(raw, sleepCap)
     }
 
     /// The longest stretch away, ever. Flattering, but true.
