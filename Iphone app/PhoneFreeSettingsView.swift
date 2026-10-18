@@ -490,7 +490,7 @@ struct PhoneFreeSettingsView: View {
     }
 
     private var shareText: String {
-        let best = PhoneFreeFormat.clock(store.bestGapTodayDisplay)
+        let best = PhoneFreeFormat.clock(store.bestGapToday)
 
         return "I'm using PhoneFree to stay off my phone. Today I've protected "
             + PhoneFreeFormat.duration(store.protectedSecondsToday)

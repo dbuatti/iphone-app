@@ -1216,34 +1216,19 @@ final class PhoneFreeStore {
     }
 
     /// The longest stretch away from the phone today: either a finished one,
-    /// or the one still running. Kept by the shared clock, so it always agrees
-    /// with the counter the user is looking at.
+    /// or the one still running, measured awake — time inside phone-free
+    /// windows (sleep above all) doesn't count. The counter itself shows the
+    /// raw number; this is the number that means something.
     var bestGapToday: TimeInterval {
-        let raw = max(usage.bestFinishedToday(at: Date()), awayInterval())
-        // Don't let sleep stretches wildly skew today's best in displays.
-        let sleepCap: TimeInterval = 8 * 3600
-        if raw > sleepCap {
-            let finished = usage.bestFinishedToday(at: Date())
-            // If current stretch is the culprit and it's overnight-like, cap it.
-            // If finished was already > cap (rare), also cap for display.
-            if raw == awayInterval() {
-                return sleepCap
-            }
-            return min(finished, sleepCap)
-        }
-        return raw
+        max(
+            usage.bestFinishedToday(at: Date()),
+            usage.awakeAwayInterval(at: Date())
+        )
     }
 
-    /// Display version of best gap today that caps obviously overnight stretches.
-    var bestGapTodayDisplay: TimeInterval {
-        let raw = max(usage.bestFinishedToday(at: Date()), awayInterval())
-        let sleepCap: TimeInterval = 8 * 3600
-        return min(raw, sleepCap)
-    }
-
-    /// The longest stretch away, ever. Flattering, but true.
+    /// The longest stretch away, ever. Flattering, but true — awake truth.
     var longestGapEver: TimeInterval {
-        max(bestCompletedGapEver, awayInterval())
+        max(bestCompletedGapEver, usage.awakeAwayInterval(at: Date()))
     }
 
     /// The longest stretch away that is *finished*. Excludes the run happening
@@ -1254,9 +1239,10 @@ final class PhoneFreeStore {
 
     /// `true` when the stretch happening right now has already beaten every
     /// finished one. Guarded on `hasRecord` so a fresh install does not instantly
-    /// declare a record on its first second of use.
+    /// declare a record on its first second of use. Both sides are awake
+    /// measurements — a night crossing a sleep window cannot win by sleeping.
     var isNewLongestGap: Bool {
-        hasRecord && awayInterval() > bestCompletedGapEver
+        hasRecord && usage.awakeAwayInterval(at: Date()) > bestCompletedGapEver
     }
 
     /// A record under a minute is noise, not an achievement — praising it
@@ -1270,21 +1256,22 @@ final class PhoneFreeStore {
     // The ladder lives in `PhoneFreeTargets` so the app and the Lock Screen
     // widget always name the same next step.
 
-    /// The next milestone the away counter is climbing towards.
+    /// The next milestone the away counter is climbing towards. Awake time:
+    /// a milestone earned by sleeping through it isn't earned at all.
     func nextGapTarget(at date: Date = Date()) -> TimeInterval? {
-        PhoneFreeTargets.next(after: awayInterval(at: date))
+        PhoneFreeTargets.next(after: usage.awakeAwayInterval(at: date))
     }
 
     /// How far the current gap has come towards its next milestone, `0...1`.
     func gapTargetProgress(at date: Date = Date()) -> Double {
-        PhoneFreeTargets.progress(for: awayInterval(at: date))
+        PhoneFreeTargets.progress(for: usage.awakeAwayInterval(at: date))
     }
 
     /// How much longer until the next milestone. `nil` once the ladder's top
     /// rung is behind you.
     func gapTimeToTarget(at date: Date = Date()) -> TimeInterval? {
         guard let target = nextGapTarget(at: date) else { return nil }
-        return max(0, target - awayInterval(at: date))
+        return max(0, target - usage.awakeAwayInterval(at: date))
     }
 
     /// A "run" of consecutive days with at least one completed goal. Framed as
@@ -1538,7 +1525,7 @@ final class PhoneFreeStore {
             reflections = saved
         }
 
-        if let data = defaults.data(forKey: "phoneFreeWindows"),
+        if let data = defaults.data(forKey: PhoneFreeWindow.defaultsKey),
            let saved = try? JSONDecoder().decode(
                [PhoneFreeWindow].self,
                from: data
@@ -1551,6 +1538,12 @@ final class PhoneFreeStore {
         }
 
         usage = PhoneFreeUsage.load()
+
+        // The mirror matters for the fallback above: with nothing saved yet,
+        // usage loads empty windows while the store starts with the defaults.
+        // One copy, or "today's best" and the widget disagree on day one.
+        usage.sleepWindows = windows
+
         showingOnboarding = !defaults.bool(forKey: "phoneFreeOnboarded")
 
         // Records used to be worked out from app-open times. Carry the old
@@ -1645,7 +1638,7 @@ final class PhoneFreeStore {
         }
 
         if let data = try? JSONEncoder().encode(windows) {
-            defaults.set(data, forKey: "phoneFreeWindows")
+            defaults.set(data, forKey: PhoneFreeWindow.defaultsKey)
         }
 
         defaults.set(goalActive, forKey: "phoneFreeGoalActive")
@@ -1661,6 +1654,10 @@ final class PhoneFreeStore {
         } else {
             defaults.removeObject(forKey: "phoneFreeGoalEnd")
         }
+
+        // Every window edit lands here (the settings sheet funnels through
+        // save()), so the in-memory mirror can never trail the saved copy.
+        usage.sleepWindows = windows
 
         PhoneFreeUsage.save(usage)
 

@@ -80,10 +80,21 @@ nonisolated enum PhoneFreeUsage {
 
         /// The longest *finished* stretch ever, and today's. A stretch
         /// finishes when the counter goes back to zero — not when the phone is
-        /// briefly picked up — so these always agree with the counter.
+        /// briefly picked up — so one stretch is recorded once, at its end.
+        ///
+        /// Stored as *awake* time: planned phone-free windows (sleep above
+        /// all) are taken out when the stretch is recorded, so a night of
+        /// nobody-touching-the-phone never reads as an achievement. The live
+        /// counter stays raw — away really is away.
         var bestEver: TimeInterval = 0
         var bestToday: TimeInterval = 0
         var bestTodayDay: Date?
+
+        /// The phone-free windows in force — read back from the same defaults
+        /// the app saves them to, never written by this type. Only the app's
+        /// store edits them; every surface (app, widget) reads the same copy,
+        /// so they all exclude the same stretches.
+        var sleepWindows: [PhoneFreeWindow] = []
 
         /// Today's best finished stretch, or zero on a new day.
         func bestFinishedToday(at now: Date) -> TimeInterval {
@@ -181,6 +192,40 @@ nonisolated enum PhoneFreeUsage {
         func countingSince(at now: Date) -> Date? {
             guard !isUsing(at: now) else { return nil }
             return settled(at: now).lastCheckIn
+        }
+
+        /// The stretch the number on screen belongs to: where it started, or
+        /// `nil` when there is nothing to count from. Frozen stretches count
+        /// from their own start too, so an in-hand number still maps to real
+        /// wall-clock time.
+        func awayAnchor(at now: Date) -> Date? {
+            if isUsing(at: now) {
+                return usingSince.map {
+                    $0.addingTimeInterval(-frozenInterval)
+                }
+            }
+            return countingSince(at: now)
+        }
+
+        /// What the counter would read if sleep didn't count — the stretch
+        /// minus its overlap with the phone-free windows. Stats and milestone
+        /// rungs read this; the counter itself stays raw, because away really
+        /// is away. With no windows set, the two are the same number.
+        func awakeAwayInterval(at now: Date) -> TimeInterval {
+            let earned = awayInterval(at: now)
+
+            guard earned > 0,
+                  !sleepWindows.isEmpty,
+                  let anchor = awayAnchor(at: now)
+            else { return earned }
+
+            let inWindows = PhoneFreeWindow.overlap(
+                from: anchor,
+                to: anchor.addingTimeInterval(earned),
+                in: sleepWindows
+            )
+
+            return max(0, earned - inWindows)
         }
 
         // MARK: Transitions
@@ -309,13 +354,25 @@ nonisolated enum PhoneFreeUsage {
         }
 
         private mutating func record(_ stretch: TimeInterval, endedAt: Date) {
-            bestEver = max(bestEver, stretch)
+            // Only awake time counts: window overlap — sleep above all — comes
+            // out before the stretch is considered, so an overnight phone left
+            // alone never sets a record nobody chose.
+            let awake = max(
+                0,
+                stretch - PhoneFreeWindow.overlap(
+                    from: endedAt.addingTimeInterval(-stretch),
+                    to: endedAt,
+                    in: sleepWindows
+                )
+            )
+
+            bestEver = max(bestEver, awake)
 
             if let bestTodayDay,
                Calendar.current.isDate(bestTodayDay, inSameDayAs: endedAt) {
-                bestToday = max(bestToday, stretch)
+                bestToday = max(bestToday, awake)
             } else {
-                bestToday = stretch
+                bestToday = awake
                 bestTodayDay = endedAt
             }
         }
@@ -332,6 +389,14 @@ nonisolated enum PhoneFreeUsage {
 
         let resetAfter = defaults?.double(forKey: resetAfterKey) ?? 0
 
+        // The windows are owned (and persisted) by the app's store; read here
+        // so this type alone is enough for every surface to exclude the same
+        // stretches. Nothing in this file ever writes them back.
+        let sleepWindows = (try? JSONDecoder().decode(
+            [PhoneFreeWindow].self,
+            from: defaults?.data(forKey: PhoneFreeWindow.defaultsKey) ?? Data()
+        )) ?? []
+
         return State(
             lastCheckIn: defaults?.object(forKey: lastCheckInKey) as? Date,
             usingSince: defaults?.object(forKey: usingSinceKey) as? Date,
@@ -339,7 +404,8 @@ nonisolated enum PhoneFreeUsage {
             surplus: defaults?.double(forKey: surplusKey) ?? 0,
             bestEver: defaults?.double(forKey: bestEverKey) ?? 0,
             bestToday: defaults?.double(forKey: bestTodayKey) ?? 0,
-            bestTodayDay: defaults?.object(forKey: bestTodayDayKey) as? Date
+            bestTodayDay: defaults?.object(forKey: bestTodayDayKey) as? Date,
+            sleepWindows: sleepWindows
         )
     }
 

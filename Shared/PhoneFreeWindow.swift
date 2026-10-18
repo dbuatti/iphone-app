@@ -9,6 +9,12 @@
 import Foundation
 
 nonisolated struct PhoneFreeWindow: Codable, Identifiable, Hashable {
+
+    /// The defaults key these are persisted under — shared with
+    /// PhoneFreeUsage.load(), which reads them for the record maths, and
+    /// PhoneFreeStore, which owns the editing.
+    static let defaultsKey = "phoneFreeWindows"
+
     var id: UUID = UUID()
     /// Whether notifications for this window are enabled.
     var enabled: Bool = true
@@ -106,5 +112,105 @@ nonisolated struct PhoneFreeWindow: Codable, Identifiable, Hashable {
         }
 
         return nil
+    }
+
+    // MARK: - Record maths
+
+    /// How much of `[from, to]` falls inside any of these windows — every
+    /// recurring occurrence of each, so an overnight window is found even
+    /// when the span begins in the middle of last night's run.
+    ///
+    /// This is what records subtract: a stretch running through planned
+    /// phone-free time (sleep above all) is not an achievement just because
+    /// nobody touched the phone — the hours outside the windows are the ones
+    /// that were actually chosen. Occurrences are merged before summing, so
+    /// overlapping windows are never subtracted twice, and the result can
+    /// never exceed the span itself.
+    ///
+    /// The day walk stops at a year. Spans that long are not gaps this app
+    /// models; stopping early can only *under*-subtract, which keeps the
+    /// mathematically absurd case boring rather than wrong in a way that
+    /// invents time.
+    static func overlap(
+        from: Date,
+        to: Date,
+        in windows: [PhoneFreeWindow]
+    ) -> TimeInterval {
+        guard to > from, !windows.isEmpty else { return 0 }
+
+        let calendar = Calendar.current
+        var occurrences: [(start: Date, end: Date)] = []
+
+        for window in windows {
+            // One day early: at 03:00 the overnight window started yesterday.
+            guard var day = calendar.date(
+                byAdding: .day,
+                value: -1,
+                to: calendar.startOfDay(for: from)
+            ) else { continue }
+
+            var walked = 0
+
+            while walked < 366 {
+                defer {
+                    day = calendar.date(
+                        byAdding: .day, value: 1, to: day
+                    ) ?? day
+                    walked += 1
+                }
+
+                guard let start = calendar.date(
+                    bySettingHour: window.startHour,
+                    minute: window.startMinute,
+                    second: 0,
+                    of: day
+                ) else { continue }
+
+                // Occurrences only start later from here on.
+                if start > to { break }
+
+                var end = calendar.date(
+                    bySettingHour: window.endHour,
+                    minute: window.endMinute,
+                    second: 0,
+                    of: start
+                ) ?? start
+
+                // Equal times would mean a zero-length window; it runs into
+                // the next day — the same reading `endIfInside` gives it.
+                if end <= start {
+                    end = calendar.date(byAdding: .day, value: 1, to: end)
+                        ?? end
+                }
+
+                let lower = max(start, from)
+                let upper = min(end, to)
+
+                if upper > lower {
+                    occurrences.append((lower, upper))
+                }
+            }
+        }
+
+        guard !occurrences.isEmpty else { return 0 }
+
+        occurrences.sort { $0.start < $1.start }
+
+        var total: TimeInterval = 0
+        var currentStart = occurrences[0].start
+        var currentEnd = occurrences[0].end
+
+        for interval in occurrences.dropFirst() {
+            if interval.start <= currentEnd {
+                currentEnd = max(currentEnd, interval.end)
+            } else {
+                total += currentEnd.timeIntervalSince(currentStart)
+                currentStart = interval.start
+                currentEnd = interval.end
+            }
+        }
+
+        total += currentEnd.timeIntervalSince(currentStart)
+        return total
     }
 }

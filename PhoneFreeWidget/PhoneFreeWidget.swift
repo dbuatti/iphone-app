@@ -128,17 +128,13 @@ struct PhoneFreeProvider: TimelineProvider {
         // so the widget and the app never show two different records.
         bestGapSeconds = usage.bestEver
 
-        let gap = usage.awayInterval(at: now)
-
-        // Where the Lock Screen counts up from. With a session open that is
-        // the stretch that was frozen — when the phone was picked up, less
-        // what was already earned — so locking the phone carries the number
-        // on rather than freezing it while the app is suspended.
-        let awayAnchor: Date? = using
-            ? usage.usingSince.map {
-                $0.addingTimeInterval(-usage.frozenInterval)
-            }
-            : usage.countingSince(at: now)
+        // The stretch the number on screen belongs to — raw, because the
+        // counter itself is raw. Where the Lock Screen counts up from: with a
+        // session open that is the stretch that was frozen — when the phone
+        // was picked up, less what was already earned — so locking the phone
+        // carries the number on rather than freezing it while the app is
+        // suspended.
+        let awayAnchor = usage.awayAnchor(at: now)
 
         return PhoneFreeEntry(
             date: now,
@@ -147,7 +143,11 @@ struct PhoneFreeProvider: TimelineProvider {
             goalsCompletedToday: completedCount,
             protectedMinutesToday: Int(protectedSeconds / 60),
             lastCheckIn: awayAnchor,
-            nextTargetSeconds: PhoneFreeTargets.next(after: gap),
+            // Milestones measure awake time, same as the app: sleep must not
+            // climb the ladder. With no windows set this is the raw gap.
+            nextTargetSeconds: PhoneFreeTargets.next(
+                after: usage.awakeAwayInterval(at: now)
+            ),
             bestGapSeconds: bestGapSeconds,
             // The frozen stretch stays on screen even after the run has ended,
             // so the number is never blanked to 0:00 while the phone is still
