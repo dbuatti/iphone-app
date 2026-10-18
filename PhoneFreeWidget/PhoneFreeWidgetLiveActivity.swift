@@ -102,7 +102,8 @@ struct PhoneFreeWidgetLiveActivity: Widget {
                         )
                         .monospacedDigit()
                         .foregroundStyle(.white)
-                        .frame(maxWidth: 110, alignment: .trailing)
+                        .frame(maxWidth: 120, alignment: .trailing)
+                        .minimumScaleFactor(0.5)
                 }
 
                 DynamicIslandExpandedRegion(.bottom) {
@@ -127,7 +128,8 @@ struct PhoneFreeWidgetLiveActivity: Widget {
                 countText(context.state, isStale: context.isStale)
                     .font(.system(size: 17, weight: .bold, design: .rounded))
                     .monospacedDigit()
-                    .frame(maxWidth: 56)
+                    .frame(maxWidth: 68)
+                    .minimumScaleFactor(0.5)
 
             } minimal: {
                 if !context.state.countsUp,
@@ -266,17 +268,26 @@ struct PhoneFreeWidgetLiveActivity: Widget {
                     .tracking(2.6)
                     .foregroundStyle(LAColor.violet)
 
-                countUp(from: awayAnchor(state))
-                    .font(.system(size: 48, weight: .bold, design: .rounded))
-                    .monospacedDigit()
-                    .foregroundStyle(.white)
-                    .minimumScaleFactor(0.5)
-                    .lineLimit(1)
+                if let frozen = state.pausedSeconds {
+                    clockText(frozen)
+                        .font(.system(size: 48, weight: .bold, design: .rounded))
+                        .monospacedDigit()
+                        .foregroundStyle(.white)
+                        .minimumScaleFactor(0.5)
+                        .lineLimit(1)
+                } else {
+                    countUp(from: awayAnchor(state))
+                        .font(.system(size: 48, weight: .bold, design: .rounded))
+                        .monospacedDigit()
+                        .foregroundStyle(.white)
+                        .minimumScaleFactor(0.5)
+                        .lineLimit(1)
+                }
 
                 Text(
                     shielded
                         ? "Free time is protecting your streak"
-                        : "Since you last used your phone"
+                        : "On your phone"
                 )
                 .font(.system(size: 13, weight: .semibold))
                 .foregroundStyle(.white.opacity(0.7))
@@ -331,21 +342,14 @@ struct PhoneFreeWidgetLiveActivity: Widget {
         switch phase {
         case .counting:
             Text("Since you last used your phone")
-        case .paused(_, let usingSince, let resetsAt, let shieldLeft):
-            HStack(spacing: 4) {
-                if shieldLeft != nil {
+        case .paused(_, _, _, let shieldLeft):
+            if shieldLeft != nil {
+                HStack(spacing: 4) {
                     Image(systemName: "bolt.fill")
-                    Text("Free time ·")
-                } else {
-                    Text("On your phone · resets in")
+                    Text("Free time · protecting your streak")
                 }
-
-                Text(timerInterval: usingSince...resetsAt, countsDown: true)
-                    .monospacedDigit()
-
-                if shieldLeft != nil {
-                    Text("left")
-                }
+            } else {
+                Text("On your phone")
             }
         case .reset:
             Text("Put it down to start the next one")
@@ -508,10 +512,12 @@ struct PhoneFreeWidgetLiveActivity: Widget {
             switch counterPhase(state, isStale: isStale) {
             case .counting(let since):
                 countUp(from: since)
-            case .paused(_, let usingSince, let resetsAt, _):
-                Text(timerInterval: usingSince...resetsAt, countsDown: true)
-            case .reset(let frozen):
-                clockText(frozen)
+            case .paused(_, _, _, _), .reset(_):
+                if let frozen = state.pausedSeconds {
+                    clockText(frozen)
+                } else {
+                    countUp(from: awayAnchor(state))
+                }
             }
         } else {
             Text(state.endDate, style: .timer)

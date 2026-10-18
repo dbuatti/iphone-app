@@ -15,7 +15,13 @@ struct PhoneFreeSettingsView: View {
     @State private var confirmingClearAll = false
     @State private var confirmingClearToday = false
     @State private var showingWindows = false
-    @State private var notificationStatus: UNAuthorizationStatus = .notDetermined
+
+    /// One source of truth for "will reminders actually arrive?", shared with
+    /// the home screen so the two can never disagree — including the moment
+    /// the user comes back from turning them on in iOS Settings.
+    private var notificationStatus: UNAuthorizationStatus {
+        store.reminderStatus ?? .notDetermined
+    }
 
     @Environment(\.openURL) private var openURL
 
@@ -83,8 +89,7 @@ struct PhoneFreeSettingsView: View {
             PhoneFreeWindowSettingsView()
         }
         .task {
-            notificationStatus = await PhoneFreeWindowScheduler.shared
-                .authorizationStatus()
+            await store.refreshReminderPermission()
         }
     }
 
@@ -343,8 +348,7 @@ struct PhoneFreeSettingsView: View {
                 Task {
                     _ = await PhoneFreeWindowScheduler.shared
                         .requestAuthorization()
-                    notificationStatus = await PhoneFreeWindowScheduler.shared
-                        .authorizationStatus()
+                    await store.refreshReminderPermission()
                 }
             }
         } label: {

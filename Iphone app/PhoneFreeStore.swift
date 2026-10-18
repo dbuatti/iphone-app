@@ -257,6 +257,12 @@ final class PhoneFreeStore {
         // The app is awake again, so the watchdog has nothing left to catch.
         stopLockWatchdog()
 
+        // Reminders are the only thing that can reach the user once they leave
+        // the app, so whether they will arrive is worth knowing before the
+        // at-risk moment, not during it. This is also the moment the user gets
+        // back from Settings having just turned them on.
+        Task { await refreshReminderPermission() }
+
         // The Shortcuts actions may have changed the counter while the app
         // was in the background.
         reloadUsage()
@@ -299,6 +305,13 @@ final class PhoneFreeStore {
         // Never stack the gate on top of an open reflection sheet, or behind
         // the introduction — leaving to set up Shortcuts is not "away".
         guard !showingReflectionSheet, !showingOnboarding else { return }
+
+        // Only show the gate on a genuine return from being away (session
+        // just closed) — not when returning to PhoneFree from another app
+        // while the session is still open.
+        if usage.isUsing(at: now) {
+            return
+        }
 
         guard gap >= checkInGateThreshold, gap <= checkInGateMaxGap else {
             return
@@ -618,6 +631,7 @@ final class PhoneFreeStore {
         // when the reason is obvious; iOS only shows the prompt once.
         Task {
             _ = await PhoneFreeWindowScheduler.shared.requestAuthorization()
+            await refreshReminderPermission()
             rescheduleGoalAlerts()
         }
     }
@@ -973,6 +987,55 @@ final class PhoneFreeStore {
     /// in use and there is at least a minute of stretch at stake.
     func showsResetCountdown(at date: Date = Date()) -> Bool {
         isUsingPhone(at: date) && usage.hasStretchAtStake
+    }
+
+    // MARK: - Reaching the user
+
+    /// The reminder permission, named for what it means to the person reading
+    /// the screen rather than for what iOS calls it.
+    enum ReminderPermission {
+        /// Not looked up yet. Say nothing, rather than guess.
+        case unknown
+        /// Reminders will be delivered.
+        case on
+        /// The user said no. iOS will not ask again; only Settings can.
+        case refused
+        /// Never asked. The prompt can still be put up.
+        case notAsked
+    }
+
+    private(set) var reminderStatus: UNAuthorizationStatus?
+
+    var reminderPermission: ReminderPermission {
+        switch reminderStatus {
+        case nil: return .unknown
+        case .denied: return .refused
+        case .notDetermined: return .notAsked
+        // Authorized, provisional and ephemeral all deliver.
+        default: return .on
+        }
+    }
+
+    /// A stretch worth keeping is on the line, and the reminders that are the
+    /// only thing able to reach the user once they leave the app have nowhere
+    /// to go.
+    ///
+    /// The app's whole at-risk story travels by notification: the countdown,
+    /// the "lock your phone to keep it". Nothing else can reach somebody who is
+    /// in another app. So when permission is off, this moment must not pass
+    /// silently — the run can end with nobody having been warned.
+    var atRiskWithoutReminders: Bool {
+        guard usage.hasStretchAtStake else { return false }
+        return reminderPermission == .refused
+            || reminderPermission == .notAsked
+    }
+
+    /// Re-reads whether iOS will actually deliver PhoneFree's reminders: a
+    /// permission can be changed in Settings at any time, including between two
+    /// launches.
+    func refreshReminderPermission() async {
+        reminderStatus = await PhoneFreeWindowScheduler.shared
+            .authorizationStatus()
     }
 
     /// Where the goal has got to, for the progress ring.

@@ -13,9 +13,11 @@
 //
 
 import SwiftUI
+import UIKit
 
 struct PhoneFreeAwayView: View {
     @Environment(PhoneFreeStore.self) private var store
+    @Environment(\.openURL) private var openURL
 
     @State private var showingPlanBuilder = false
 
@@ -910,8 +912,74 @@ struct PhoneFreeAwayView: View {
                     )
                     .font(.footnote.weight(.medium))
                     .foregroundStyle(tint)
+
+                    if store.atRiskWithoutReminders {
+                        remindersOffNotice
+                    }
                 }
             }
+        }
+    }
+
+    /// The last place PhoneFree can speak to the user before they leave.
+    ///
+    /// Every warning this app gives about a stretch at risk travels by
+    /// notification, and a notification cannot reach somebody who is in another
+    /// app if permission is off. So the one moment the app is certain to have
+    /// their attention is also the moment it should admit the reminders are
+    /// not going anywhere.
+    private var remindersOffNotice: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Rectangle()
+                .fill(PhoneFreeTheme.cardBorder)
+                .frame(height: 1)
+
+            HStack(alignment: .top, spacing: 10) {
+                Image(systemName: "bell.slash")
+                    .font(.subheadline)
+                    .foregroundStyle(PhoneFreeTheme.accent)
+
+                Text(
+                    store.reminderPermission == .refused
+                        ? "Notifications are off for PhoneFree, so nothing "
+                            + "can warn you while you're in another app."
+                        : "Reminders haven't been allowed yet, so nothing "
+                            + "can warn you while you're in another app."
+                )
+                .font(.caption)
+                .foregroundStyle(PhoneFreeTheme.muted)
+                .fixedSize(horizontal: false, vertical: true)
+
+                Spacer(minLength: 0)
+            }
+
+            PhoneFreeSecondaryButton(
+                title: store.reminderPermission == .refused
+                    ? "Open notification settings"
+                    : "Allow reminders",
+                symbol: "bell",
+                tint: PhoneFreeTheme.accent,
+                action: fixReminders
+            )
+        }
+    }
+
+    /// Mirrors Settings. iOS only ever puts the permission prompt up once, so
+    /// a refusal has to be undone in Settings, while a question never asked can
+    /// still be asked here — where the reason for it is on screen.
+    private func fixReminders() {
+        if store.reminderPermission == .refused {
+            if let url = URL(
+                string: UIApplication.openNotificationSettingsURLString
+            ) {
+                openURL(url)
+            }
+            return
+        }
+
+        Task {
+            _ = await PhoneFreeWindowScheduler.shared.requestAuthorization()
+            await store.refreshReminderPermission()
         }
     }
 

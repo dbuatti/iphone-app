@@ -208,10 +208,15 @@ struct PhoneFreeWidgetEntryView: View {
     // they reach for the phone. Unlike a Live Activity they never expire.
 
     /// The date the accessory families count from: a goal's end when one is
-    /// running, otherwise the moment of the last confirmed phone use.
+    /// running. Otherwise, while the phone is in use, the counter is frozen
+    /// (no live count-up) so the widget shows the held number; when not in use
+    /// it counts up from the last check-in.
     private var accessoryDate: Date? {
         if activeGoal, let goalEnd = entry.goalEnd {
             return goalEnd
+        }
+        if entry.pausedSeconds != nil {
+            return nil
         }
         return entry.lastCheckIn
     }
@@ -244,8 +249,13 @@ struct PhoneFreeWidgetEntryView: View {
     /// once the run has ended. The number is never blanked while the phone is
     /// still in the user's hand.
     private var stillCounterText: String? {
-        guard let paused = entry.pausedSeconds else { return nil }
-        return Self.clock(paused)
+        if let paused = entry.pausedSeconds {
+            return Self.clock(paused)
+        }
+        if entry.heldAtZero {
+            return Self.clock(0)
+        }
+        return nil
     }
 
     private static func clock(_ interval: TimeInterval) -> String {

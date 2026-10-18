@@ -36,7 +36,7 @@ struct CheckInGateView: View {
                         .scaledFont(32, relativeTo: .largeTitle)
                         .foregroundStyle(accent)
 
-                    Text("You were away for")
+                    Text("Your stretch")
                         .font(.subheadline)
                         .foregroundStyle(muted)
                         .padding(.top, 18)
@@ -49,7 +49,7 @@ struct CheckInGateView: View {
                         .foregroundStyle(.white)
                         .padding(.top, 2)
                         .accessibilityLabel(
-                            "You were away for "
+                            "Your stretch "
                             + PhoneFreeFormat.spoken(awayFor)
                         )
 
@@ -61,9 +61,9 @@ struct CheckInGateView: View {
                         .padding(.top, 26)
 
                     Text(
-                        "Still on it in "
+                        "Still on it past "
                         + PhoneFreeUsage.words(resetAfter)
-                        + " and your timer goes back to 0."
+                        + " and the stretch restarts from zero."
                     )
                         .scaledFont(14, relativeTo: .subheadline)
                         .foregroundStyle(muted)
