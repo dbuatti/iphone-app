@@ -66,6 +66,11 @@ final class PhoneFreeStore {
 
     static let appGroupID = "group.com.danielebuatti.phonefree"
 
+    /// Remembers when the phone was last in hand across launches, so an
+    /// absence PhoneFree slept (or was killed) through is not mistaken for
+    /// time on the phone. See `closeSessionInterruptedByLock(at:)`.
+    private static let backgroundedAtKey = "phoneFreeLastSeenAt"
+
     /// Durations offered on the home screen. Short, clear, few.
     let goalOptions = [5, 10, 20, 30, 45]
 
@@ -225,6 +230,15 @@ final class PhoneFreeStore {
     /// session can survive a lock — this is what lets the unlock put it right.
     private var wasLockedWhileAway = false
 
+    /// Watches the lock state itself for a little while after the app leaves
+    /// the screen, for the one lock signal iOS swallows (see
+    /// `startLockWatchdog`).
+    @ObservationIgnored private var lockWatchdogTask: Task<Void, Never>?
+
+    /// The background-execution assertion that keeps the watchdog awake; iOS
+    /// would otherwise suspend the app seconds after it leaves the screen.
+    @ObservationIgnored private var lockWatchdogAssertion: UIBackgroundTaskIdentifier = .invalid
+
     /// Below this, opening the app is just the app; it is not worth friction.
     private let checkInGateThreshold: TimeInterval = 60
 
@@ -240,6 +254,9 @@ final class PhoneFreeStore {
 
     /// Called when the app appears and whenever it comes back to the front.
     func handleBecameActive() {
+        // The app is awake again, so the watchdog has nothing left to catch.
+        stopLockWatchdog()
+
         // The Shortcuts actions may have changed the counter while the app
         // was in the background.
         reloadUsage()
@@ -313,6 +330,9 @@ final class PhoneFreeStore {
         promiseGateShownThisSession = false
         isInForeground = false
 
+        // Whatever the last absence was watching for, this one starts fresh.
+        stopLockWatchdog()
+
         let now = Date()
         backgroundedAt = now
         wasLockedWhileAway = false
@@ -323,6 +343,12 @@ final class PhoneFreeStore {
             // time at stake, so the countdown reminders run it home.
             if usage.hasStretchAtStake {
                 PhoneFreeUseReminders.schedule(for: usage, now: now)
+            }
+
+            // A lock landing in the next few seconds would otherwise be
+            // invisible to an app the user has just left.
+            if usage.isUsing(at: now) {
+                startLockWatchdog()
             }
         } else {
             // Locked: the phone went down. The counter starts again — or
@@ -340,6 +366,8 @@ final class PhoneFreeStore {
     /// app happens to be, so the use session ends and the counter starts
     /// counting the time away again from this moment.
     func handleDeviceLocked() {
+        stopLockWatchdog()
+
         let now = Date()
         wasLockedWhileAway = true
         backgroundedAt = backgroundedAt ?? now
@@ -353,6 +381,8 @@ final class PhoneFreeStore {
     /// starts so the counter freezes — but `lastCheckIn` is left untouched,
     /// so the away gap the check-in gate reports is still the honest one.
     func handleDeviceUnlocked() {
+        stopLockWatchdog()
+
         let now = Date()
 
         // An unlock proves a lock happened, and the lock may have come while
@@ -369,21 +399,86 @@ final class PhoneFreeStore {
         syncLockScreenCounter()
     }
 
+    // MARK: - The lock watchdog
+
+    /// Catches the lock signal iOS withholds.
+    ///
+    /// A lock that happens while PhoneFree is suspended is never delivered on
+    /// the way in, and the app is suspended a few seconds after it leaves the
+    /// screen — exactly when someone pockets and locks the phone. So for that
+    /// short window the app holds a background assertion and reads the device's
+    /// lock state itself, which turns the usual case into an exact lock moment
+    /// rather than a guess made on the way back in.
+    ///
+    /// Nothing here changes what a plain app switch does: the state only ever
+    /// goes from available to unavailable, and it stays available for someone
+    /// who is still holding the phone.
+    private func startLockWatchdog() {
+        stopLockWatchdog()
+
+        let assertion = UIApplication.shared.beginBackgroundTask(
+            withName: "PhoneFreeLockWatchdog"
+        ) { [weak self] in
+            // Out of time. Stop watching; whatever the session looks like now
+            // is what the resume path has to work with.
+            Task { @MainActor in self?.stopLockWatchdog() }
+        }
+
+        guard assertion != .invalid else { return }
+        lockWatchdogAssertion = assertion
+
+        lockWatchdogTask = Task { @MainActor in
+            let deadline = Date().addingTimeInterval(25)
+
+            while Date() < deadline, !Task.isCancelled {
+                try? await Task.sleep(for: .milliseconds(500))
+                if Task.isCancelled { return }
+
+                if !UIApplication.shared.isProtectedDataAvailable {
+                    handleDeviceLocked()
+                    return
+                }
+            }
+
+            stopLockWatchdog()
+        }
+    }
+
+    private func stopLockWatchdog() {
+        lockWatchdogTask?.cancel()
+        lockWatchdogTask = nil
+
+        if lockWatchdogAssertion != .invalid {
+            UIApplication.shared.endBackgroundTask(lockWatchdogAssertion)
+            lockWatchdogAssertion = .invalid
+        }
+    }
+
     /// Closes a use session that is still open even though the device has
     /// been locked since — the "put down" signal PhoneFree never received.
     ///
     /// The lock moment itself is unknowable from here, so the session is
     /// closed at the last moment the app saw the user, which is the generous
-    /// reading: everything after that counts as time away. It is deliberately
-    /// narrow. It only fires when a lock is *known* to have happened and the
-    /// session predates it, so a plain app-switch keeps its session exactly as
-    /// before.
+    /// reading: everything after that counts as time away.
+    ///
+    /// A lock is proof. Failing one, the hourglass is the fallback: once the
+    /// app has been off screen for longer than the whole shield the session was
+    /// running on, the session is holding nothing back — the grace it was
+    /// protecting has already gone — and the honest reading is that the phone
+    /// was down, which is what the Lock Screen has been showing all along. A
+    /// short switch to another app stays inside that shield and keeps its
+    /// session exactly as before.
     private func closeSessionInterruptedByLock(at now: Date) {
-        guard wasLockedWhileAway,
-              let backgroundedAt,
+        guard let backgroundedAt,
               let usingSince = usage.usingSince,
               usingSince <= backgroundedAt,
               usage.isUsing(at: now) else { return }
+
+        let shield = usage.resetAfter + usage.surplus
+        let interrupted = wasLockedWhileAway
+            || now.timeIntervalSince(backgroundedAt) >= shield
+
+        guard interrupted else { return }
 
         usage.endUse(at: max(usingSince, backgroundedAt))
     }
@@ -1188,6 +1283,10 @@ final class PhoneFreeStore {
             return
         }
 
+        // Read back before the session, so an absence the app slept through —
+        // or was killed during — still knows when the phone was last in hand.
+        backgroundedAt = defaults.object(forKey: Self.backgroundedAtKey) as? Date
+
         if let data = defaults.data(forKey: "phoneFreeHistory"),
            let saved = try? JSONDecoder().decode(
                [PhoneFreeEvent].self,
@@ -1332,6 +1431,10 @@ final class PhoneFreeStore {
         }
 
         PhoneFreeUsage.save(usage)
+
+        if let backgroundedAt {
+            defaults.set(backgroundedAt, forKey: Self.backgroundedAtKey)
+        }
         defaults.set(goalNudgesEnabled, forKey: "phoneFreeGoalNudges")
         defaults.set(finishChimeEnabled, forKey: "phoneFreeFinishChime")
         defaults.set(taskChimeEnabled, forKey: "phoneFreeTaskChime")
