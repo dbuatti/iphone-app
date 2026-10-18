@@ -288,28 +288,53 @@ struct PhoneFreeWidgetLiveActivity: Widget {
         .padding(.vertical, 18)
     }
 
-    /// The big number on the Lock Screen. It only ever shows when the phone is
-    /// down, so it must always end up ticking — never a frozen frame that later
-    /// jumps. Within the grace window the stretch is still at stake, so it holds
-    /// the earned number. Once grace (and any banked time) has run out the run is
-    /// over: because the Lock Screen is the put-down surface, it starts ticking
-    /// on its own from the reset moment, even before the app has registered the
-    /// put-down. That is what stops it freezing at a stale value and then
-    /// jumping. Once the put-down is registered it ticks from there instead.
+    /// The big number on the Lock Screen.
+    ///
+    /// While a session was open at the last push, the number holds — exactly
+    /// what the state machine reports (`awayInterval` returns the frozen
+    /// stretch even past grace). It must not self-tick from the reset moment:
+    /// the widget cannot know whether the phone is still in the hand, and a
+    /// snap from the earned number down to 0:00 while in hand is precisely
+    /// the blank the app never shows.
+    ///
+    /// The exception mirrors `settled()`: once no app signal has arrived for
+    /// the full abandon window, the state machine records the session and
+    /// counts away time from `resetsAt` on its next run. The widget settles
+    /// the same way from the same dates, so a phone that is down — and whose
+    /// lock the suspended app never saw — resumes accruing after at most the
+    /// abandon window, in agreement with every other surface. The app's
+    /// lock/put-down push replaces the held number sooner in the common case:
+    /// within grace it continues from the earned number, past grace it starts
+    /// the new run from the put-down.
+    ///
+    /// With no session open the phone is down and the number ticks up from
+    /// where it was left — the Lock Screen is the put-down surface.
     @ViewBuilder
     private func lockScreenNumber(
         _ state: PhoneFreeWidgetAttributes.ContentState
     ) -> some View {
-        let now = Date()
-        let pastReset = state.resetsAt.map { $0 <= now } ?? false
-
-        if let frozen = state.pausedSeconds, !pastReset {
+        if let frozen = state.pausedSeconds, !isSettled(state) {
             clockText(frozen)
-        } else if state.pausedSeconds != nil, let resetsAt = state.resetsAt {
-            countUp(from: resetsAt)
+        } else if state.pausedSeconds != nil {
+            countUp(from: state.resetsAt ?? awayAnchor(state))
         } else {
             countUp(from: awayAnchor(state))
         }
+    }
+
+    /// Mirrors `PhoneFreeUsage.State.isAbandoned` on the dates the widget
+    /// actually has: the session must be past both its reset and the whole
+    /// abandon window before it is settled. Without `resetsAt` there is
+    /// nothing to settle from, so the number keeps holding.
+    private func isSettled(
+        _ state: PhoneFreeWidgetAttributes.ContentState
+    ) -> Bool {
+        guard let resetsAt = state.resetsAt else { return false }
+        let now = Date()
+        return now >= resetsAt
+            && now >= state.startDate.addingTimeInterval(
+                PhoneFreeUsage.abandonAfter
+            )
     }
 
     /// One line under the number, in words. The Lock Screen is the surface you
