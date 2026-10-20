@@ -33,6 +33,10 @@ struct PhoneFreeAwayView: View {
                     surplusAwardBanner(award)
                 }
 
+                if let room = store.sharedSession, !room.isOver {
+                    awaySessionCard(room)
+                }
+
                 if store.showsResetCountdown() {
                     usageBanner
                 }
@@ -72,6 +76,54 @@ struct PhoneFreeAwayView: View {
     }
 
     // MARK: - Header
+
+    /// A live shared session, so the people in it never have to go hunting
+    /// for the room. Tapping opens the full sheet; the card itself stays
+    /// quiet — a roommate, not an alarm.
+    private func awaySessionCard(_ room: SharedSessionState) -> some View {
+        Button {
+            store.showingSharedSessionSheet = true
+        } label: {
+            PhoneFreeCard {
+                HStack(spacing: 12) {
+                    Image(systemName: room.mode == .sharedFate ? "link" : "person.2.fill")
+                        .font(.callout)
+                        .foregroundStyle(PhoneFreeTheme.accent)
+
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("With \(otherNames(in: room))")
+                            .font(.subheadline.weight(.medium))
+                            .foregroundStyle(.white)
+                            .lineLimit(1)
+
+                        Text(room.mode == .sharedFate
+                             ? "Shared fate — one of you picks up, it ends for both"
+                             : "Own counters — your phone, your rules")
+                            .font(.caption)
+                            .foregroundStyle(PhoneFreeTheme.muted)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+
+                    Spacer(minLength: 8)
+
+                    Text(PhoneFreeFormat.duration(room.duration(at: Date())))
+                        .font(.caption.monospacedDigit())
+                        .foregroundStyle(PhoneFreeTheme.reward)
+                }
+                .frame(minHeight: 44)
+                .contentShape(Rectangle())
+            }
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Shared session with \(otherNames(in: room)). Tap to open.")
+    }
+
+    private func otherNames(in room: SharedSessionState) -> String {
+        let others = room.participants
+            .filter { $0.id != store.participantID }
+            .map(\.name)
+        return others.isEmpty ? "yourself" : others.joined(separator: ", ")
+    }
 
     private var header: some View {
         HStack(alignment: .firstTextBaseline) {

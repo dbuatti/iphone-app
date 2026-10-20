@@ -452,14 +452,94 @@ struct PhoneFreeSettingsView: View {
 
     private var sharingSection: some View {
         VStack(alignment: .leading, spacing: 12) {
-            PhoneFreeSectionLabel("TELL SOMEONE")
+            PhoneFreeSectionLabel("SHARED SESSION")
 
             PhoneFreeCard {
                 VStack(alignment: .leading, spacing: 12) {
                     Text(
-                        "Doing this in front of someone makes it stick. Send "
-                        + "your number to a friend and ask them to check in "
-                        + "on you."
+                        "Do this with someone else. You both put your phones down " +
+                        "and the room watches both — or just watches you, if you " +
+                        "pick \"Own counters\". Either way, you're not doing it alone."
+                    )
+                    .font(.footnote)
+                    .foregroundStyle(PhoneFreeTheme.muted)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                    // Active session card
+                    if let room = store.sharedSession {
+                        VStack(alignment: .leading, spacing: 8) {
+                            HStack {
+                                Image(systemName: room.isOver ? "checkmark.circle" : "person.2.fill")
+                                    .foregroundStyle(room.isOver ? PhoneFreeTheme.reward : PhoneFreeTheme.accent)
+                                Text(room.isOver ? "Session ended" : "Active session")
+                                    .font(.subheadline.weight(.semibold))
+                                    .foregroundStyle(.white)
+                                Spacer()
+                                if !room.isOver {
+                                    Text(PhoneFreeFormat.duration(room.duration(at: Date())))
+                                        .font(.caption.monospaced())
+                                        .foregroundStyle(PhoneFreeTheme.reward)
+                                }
+                            }
+
+                            Text(room.isOver
+                                ? "You were together for \(PhoneFreeFormat.duration(room.duration(at: room.endedAt ?? Date())))."
+                                : "\(room.participants.count) in the room · \(room.mode.label)")
+                                .font(.caption)
+                                .foregroundStyle(PhoneFreeTheme.muted)
+
+                            if room.isOver, let reason = room.endReason {
+                                Text(endReasonText(reason))
+                                    .font(.caption)
+                                    .foregroundStyle(PhoneFreeTheme.muted)
+                                    .fixedSize(horizontal: false, vertical: true)
+                            }
+
+                            Button {
+                                store.showingSharedSessionSheet = true
+                            } label: {
+                                Text(room.isOver ? "View details" : "Open")
+                                    .font(.subheadline.weight(.medium))
+                                    .foregroundStyle(PhoneFreeTheme.background)
+                                    .frame(maxWidth: .infinity)
+                                    .padding(.vertical, 8)
+                                    .background(room.isOver ? PhoneFreeTheme.muted.opacity(0.3) : PhoneFreeTheme.accent)
+                                    .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                            }
+                            .disabled(room.isOver)
+                        }
+                    } else {
+                        // No active session — start/join
+                        Button {
+                            store.showingSharedSessionSheet = true
+                        } label: {
+                            HStack(spacing: 8) {
+                                Image(systemName: "person.2.badge.plus")
+                                Text("Start or join a session")
+                            }
+                            .font(.subheadline.weight(.medium))
+                            .foregroundStyle(PhoneFreeTheme.background)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 10)
+                            .frame(minHeight: 48)
+                            .background(PhoneFreeTheme.accent)
+                            .clipShape(
+                                RoundedRectangle(
+                                    cornerRadius: 14,
+                                    style: .continuous
+                                )
+                            )
+                        }
+                    }
+                }
+            }
+
+            // Also keep the simple progress share
+            PhoneFreeCard {
+                VStack(alignment: .leading, spacing: 12) {
+                    Text(
+                        "Or just tell someone how it's going — share a snapshot " +
+                        "of your progress without the live room."
                     )
                     .font(.footnote)
                     .foregroundStyle(PhoneFreeTheme.muted)
@@ -496,6 +576,14 @@ struct PhoneFreeSettingsView: View {
             + PhoneFreeFormat.duration(store.protectedSecondsToday)
             + " and my longest pause was \(best). "
             + "Ask me how it's going."
+    }
+
+    private func endReasonText(_ reason: SharedSessionEnd) -> String {
+        switch reason {
+        case .byChoice: return "You chose to end it. Nothing lost — the next one starts when you start it."
+        case .brokenBy(_, let name): return "\(name) picked up their phone past the grace period. Ending early isn't failing — it's just ending."
+        case .disbanded(let name): return "\(name) left the session. The room closed — no blame, just done."
+        }
     }
 
     // MARK: - Windows

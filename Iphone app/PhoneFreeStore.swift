@@ -211,6 +211,10 @@ final class PhoneFreeStore {
     /// Shown on first launch, and again whenever Settings asks for it.
     var showingOnboarding = false
 
+    /// The shared session sheet — the whole feature flows through this one
+    /// sheet, which switches between "start/join" and "in session" states.
+    var showingSharedSessionSheet = false
+
     func finishOnboarding() {
         showingOnboarding = false
         PhoneFreeUsage.defaults?.set(true, forKey: "phoneFreeOnboarded")
@@ -1515,6 +1519,11 @@ final class PhoneFreeStore {
     /// progress, an offer that went stale.
     private(set) var sharedSessionError: String?
 
+    /// True while a link (nearby or SharePlay) exists and hasn't been closed.
+    /// Used by the sheet to know it's in a "connecting" state before the
+    /// session itself is created.
+    var hasActiveSharedLink: Bool { sharedLink != nil }
+
     private var sharedLink: SharedSessionLink?
 
     /// The offer last accepted, waiting for its link to connect. A joiner
@@ -1540,7 +1549,9 @@ final class PhoneFreeStore {
     /// This phone in the room: a stable per-install id (two phones of one
     /// person are two participants), and a name the person chose — defaulting
     /// to what the phone calls itself.
-    private var participantID: String {
+    /// The stable per-install id this phone answers to in a room. Read by
+    /// the session sheet to mark its owner's own row.
+    var participantID: String {
         let defaults = UserDefaults(suiteName: Self.appGroupID)
         if let id = defaults?.string(forKey: "phoneFreeParticipantID") {
             return id
@@ -1577,6 +1588,23 @@ final class PhoneFreeStore {
             lastSeen: now
         )
     }
+
+    /// The mode the user picked for the next session (persists for the sheet).
+    var sharedSessionMode: SharedSessionMode {
+        get {
+            UserDefaults(suiteName: Self.appGroupID)?
+                .string(forKey: "phoneFreeSharedSessionMode")
+                .flatMap(SharedSessionMode.init(rawValue:)) ?? .ownCounters
+        }
+        set {
+            UserDefaults(suiteName: Self.appGroupID)?
+                .set(newValue.rawValue, forKey: "phoneFreeSharedSessionMode")
+        }
+    }
+
+    /// The join code being typed (nearby only). In memory, so a code from a
+    /// past session never greets anyone on the next launch.
+    var sharedJoinCode = ""
 
     /// Starts a room and offers it. `nearby` shows a code the other person
     /// types — two phones, same place, a direct link with no server of ours

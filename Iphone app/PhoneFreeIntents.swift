@@ -115,7 +115,10 @@ struct PhoneFreeShortcuts: AppShortcutsProvider {
 /// them up is the fiddliest part of the app, so it is never left to faith:
 /// each action notes when it last ran, and the app can say "connected",
 /// "half set up" or "not set up yet".
-enum PhoneFreeAutomationHealth {
+///
+/// `nonisolated` because the intents run off the main actor in Swift 6 mode;
+/// everything here is plain UserDefaults.
+nonisolated enum PhoneFreeAutomationHealth {
     enum Signal: String {
         case opened = "phoneFreeAutomationOpenedAt"
         case closed = "phoneFreeAutomationClosedAt"
@@ -146,7 +149,8 @@ enum PhoneFreeAutomationHealth {
 
 /// The goal as the store last saved it. The intents read it straight from the
 /// shared defaults because they may run before the app has a store at all.
-private enum PhoneFreeIntentGoal {
+/// `nonisolated`: same reason as above — no actor state, just defaults.
+nonisolated private enum PhoneFreeIntentGoal {
     static func isRunning(at now: Date) -> Bool {
         let defaults = PhoneFreeUsage.defaults
 

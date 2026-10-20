@@ -168,6 +168,10 @@ struct ContentView: View {
                 onSkip: { store.skipReflections() }
             )
         }
+        .sheet(isPresented: $store.showingSharedSessionSheet) {
+            PhoneFreeSharedSessionView()
+                .environment(store)
+        }
     }
 
     // MARK: - Friction

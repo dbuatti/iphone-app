@@ -250,7 +250,7 @@ struct PhoneFreeSecondaryButton: View {
 
 // MARK: - Time formatting
 
-enum PhoneFreeFormat {
+nonisolated enum PhoneFreeFormat {
     /// "0:42", "12:05", "3:07:44" — the clock style used for live counters.
     static func clock(_ interval: TimeInterval) -> String {
         let seconds = max(0, Int(interval))

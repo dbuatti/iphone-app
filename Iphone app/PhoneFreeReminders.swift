@@ -23,7 +23,9 @@ import WidgetKit
 
 // MARK: - Use reminders
 
-enum PhoneFreeUseReminders {
+/// `nonisolated` so the Shortcuts intents can schedule and clear reminders
+/// off the main actor — the work is notification-center calls and plain data.
+nonisolated enum PhoneFreeUseReminders {
     static let categoryID = "PHONEFREE_USE"
     static let putDownActionID = "PUT_DOWN"
     static let requestPrefix = "pf_use_"
@@ -194,7 +196,7 @@ enum PhoneFreeUseReminders {
     }
 }
 
-extension Notification.Name {
+nonisolated extension Notification.Name {
     /// Posted when something outside the store (a Shortcuts action, a
     /// notification button) changed the shared counter.
     static let phoneFreeUsageChanged = Notification.Name("phonefreeUsageChanged")
