@@ -250,11 +250,12 @@ struct PhoneFreeWidgetLiveActivity: Widget {
     private func checkInLockScreen(
         _ state: PhoneFreeWidgetAttributes.ContentState
     ) -> some View {
+        let inUse = state.pausedSeconds != nil && !isSettled(state)
         let shielded = state.shieldLeft != nil
-        let tint = state.onPhone
+        let tint = inUse
             ? LAColor.coral
             : (shielded ? LAColor.lime : LAColor.violet)
-        let symbol = state.onPhone ? "iphone" : (shielded ? "bolt.fill" : "iphone.slash")
+        let symbol = inUse ? "iphone" : (shielded ? "bolt.fill" : "iphone.slash")
 
         return HStack(spacing: 18) {
             ZStack {
@@ -318,14 +319,12 @@ struct PhoneFreeWidgetLiveActivity: Widget {
     private func lockScreenNumber(
         _ state: PhoneFreeWidgetAttributes.ContentState
     ) -> some View {
-        if state.onPhone {
-            // While the phone is unlocked and in use, the Lock Screen activity
-            // (visible when swiping down) shows the same negative red count as
-            // the Dynamic Island and the app.
+        if state.pausedSeconds != nil && !isSettled(state) {
+            // While the phone is in use, the Lock Screen activity (visible
+            // when swiping down) shows the same negative red count as the
+            // Dynamic Island and the app.
             clockText(-(Date().timeIntervalSince(state.startDate)))
                 .foregroundStyle(LAColor.coral)
-        } else if let frozen = state.pausedSeconds, !isSettled(state) {
-            clockText(frozen)
         } else if state.pausedSeconds != nil {
             countUp(from: state.resetsAt ?? awayAnchor(state))
         } else {
@@ -356,7 +355,8 @@ struct PhoneFreeWidgetLiveActivity: Widget {
     private func lockScreenCaption(
         _ state: PhoneFreeWidgetAttributes.ContentState
     ) -> String {
-        if state.onPhone {
+        let inUse = state.pausedSeconds != nil && !isSettled(state)
+        if inUse {
             return "You've been on your phone"
         }
         if state.shieldLeft != nil {
@@ -573,7 +573,7 @@ struct PhoneFreeWidgetLiveActivity: Widget {
         _ state: PhoneFreeWidgetAttributes.ContentState,
         isStale: Bool
     ) -> some View {
-        if state.onPhone {
+        if state.pausedSeconds != nil && !isSettled(state) {
             // While the phone is in the hand the counter resets to zero and
             // runs negative in red: how long it has been used, not how long it
             // has been away. The earned stretch is still recorded on put-down.
