@@ -46,6 +46,7 @@ nonisolated enum PhoneFreeUsage {
     static let bestTodayKey = "phoneFreeBestStretchToday"
     static let bestTodayDayKey = "phoneFreeBestStretchDay"
     static let stretchEndingsKey = "phoneFreeStretchEndings"
+    static let stretchRecordedKey = "phoneFreeStretchRecorded"
     static let surplusKey = "phoneFreeSurplus"
 
     /// The most free time the bank will hold. An hour is enough to matter and
@@ -105,6 +106,13 @@ nonisolated enum PhoneFreeUsage {
         /// to be told. Persisted so a relaunch does not replay old trips.
         var stretchEndings: Int = 0
 
+        /// True once the grace period (and any banked surplus) has run out on
+        /// this open session: the stretch has been recorded and the counter is
+        /// frozen at it. Stays true until the phone goes down, so the
+        /// countdown and the reminders do not re-arm themselves after the
+        /// reset.
+        var stretchRecorded: Bool = false
+
         /// Today's best finished stretch, or zero on a new day.
         func bestFinishedToday(at now: Date) -> TimeInterval {
             guard let bestTodayDay,
@@ -162,7 +170,7 @@ nonisolated enum PhoneFreeUsage {
         /// open session — the point the streak actually resets.
         func hasReset(at now: Date) -> Bool {
             guard isUsing(at: now), let resetsAt else { return false }
-            return now >= resetsAt
+            return stretchRecorded || now >= resetsAt
         }
 
         /// The stretch the current session froze — what the user stands to
@@ -176,7 +184,7 @@ nonisolated enum PhoneFreeUsage {
         /// Below a minute there is nothing to lose, so the app stays quiet
         /// rather than counting down over a zero.
         var hasStretchAtStake: Bool {
-            usingSince != nil && frozenInterval >= 60
+            usingSince != nil && frozenInterval >= 60 && !stretchRecorded
         }
 
         /// The number on screen.
@@ -245,6 +253,7 @@ nonisolated enum PhoneFreeUsage {
             self = settled(at: now)
             if usingSince == nil {
                 usingSince = now
+                stretchRecorded = false
             }
         }
 
@@ -271,8 +280,8 @@ nonisolated enum PhoneFreeUsage {
                 // over because the phone went back in hand.
                 stretchEndings += 1
             }
-
             self.usingSince = nil
+            stretchRecorded = false
         }
 
         /// The counter starts again from zero right now (a goal starting, a
@@ -286,6 +295,7 @@ nonisolated enum PhoneFreeUsage {
 
             lastCheckIn = now
             usingSince = nil
+            stretchRecorded = false
         }
 
         /// The counter starts again from zero right now, recording nothing on
@@ -297,6 +307,7 @@ nonisolated enum PhoneFreeUsage {
             usingSince = nil
             bestToday = 0
             bestTodayDay = nil
+            stretchRecorded = false
         }
 
         /// Back to a fresh install, with no record of anything — used by
@@ -334,6 +345,7 @@ nonisolated enum PhoneFreeUsage {
                 record(frozen, endedAt: usingSince)
                 lastCheckIn = now.addingTimeInterval(-frozen)
                 surplus = 0
+                stretchRecorded = true
             }
 
             self.usingSince = now
@@ -366,6 +378,7 @@ nonisolated enum PhoneFreeUsage {
             // settle is a stretch lost to use, so it counts as a pickup the
             // same way `endUse` running out does.
             copy.stretchEndings += 1
+            copy.stretchRecorded = false
             return copy
         }
 
@@ -422,7 +435,8 @@ nonisolated enum PhoneFreeUsage {
             bestToday: defaults?.double(forKey: bestTodayKey) ?? 0,
             bestTodayDay: defaults?.object(forKey: bestTodayDayKey) as? Date,
             sleepWindows: sleepWindows,
-            stretchEndings: defaults?.integer(forKey: stretchEndingsKey) ?? 0
+            stretchEndings: defaults?.integer(forKey: stretchEndingsKey) ?? 0,
+            stretchRecorded: defaults?.bool(forKey: stretchRecordedKey) ?? false
         )
     }
 
@@ -451,6 +465,7 @@ nonisolated enum PhoneFreeUsage {
         }
 
         defaults.set(state.stretchEndings, forKey: stretchEndingsKey)
+        defaults.set(state.stretchRecorded, forKey: stretchRecordedKey)
     }
 
     /// "30 seconds", "1 minute", "2 minutes" — for sentences, where "1m"

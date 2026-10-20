@@ -190,6 +190,7 @@ final class PhoneFreeLiveActivityManager {
             // dropping it to zero the moment the grace period ends.
             state.pausedSeconds = usage.frozenInterval
             state.resetsAt = usage.resetsAt
+            state.stretchRecorded = usage.stretchRecorded
 
             if usage.isShielded(at: now) {
                 state.shieldLeft = usage.surplusRemaining(at: now)
@@ -197,7 +198,7 @@ final class PhoneFreeLiveActivityManager {
 
             // Going stale at the reset is what switches the Dynamic Island
             // to "held at zero" without the app having to run.
-            if let resetsAt = usage.resetsAt, resetsAt > now {
+            if let resetsAt = usage.resetsAt, resetsAt > now, !usage.stretchRecorded {
                 staleDate = resetsAt
             }
         }

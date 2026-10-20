@@ -197,7 +197,7 @@ struct PhoneFreeWidgetLiveActivity: Widget {
             return .counting(since: state.startDate)
         }
 
-        if isStale || resetsAt <= Date() {
+        if isStale || resetsAt <= Date() || state.stretchRecorded {
             return .reset(frozen: frozen)
         }
 
@@ -329,6 +329,7 @@ struct PhoneFreeWidgetLiveActivity: Widget {
     private func isSettled(
         _ state: PhoneFreeWidgetAttributes.ContentState
     ) -> Bool {
+        guard !state.stretchRecorded else { return false }
         guard let resetsAt = state.resetsAt else { return false }
         let now = Date()
         return now >= resetsAt

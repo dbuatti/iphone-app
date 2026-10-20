@@ -42,6 +42,7 @@ nonisolated struct PhoneFreeWidgetAttributes: ActivityAttributes {
         /// `resetsAt` the activity goes stale and shows the reset state.
         var pausedSeconds: TimeInterval? = nil
         var resetsAt: Date? = nil
+        var stretchRecorded: Bool = false
 
         /// While banked free time is paying for the session: how much of it
         /// is left. `nil` when no shield is active. Lets the Lock Screen and
