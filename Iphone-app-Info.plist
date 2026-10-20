@@ -24,5 +24,11 @@
 	<array>
 		<string>com.danielebuattipersonalteam.Iphoneapp.lockcheck</string>
 	</array>
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>PhoneFree links two phones into one shared session over the local network — the code you both see keeps the room private, and nothing leaves it.</string>
+	<key>NSBonjourServices</key>
+	<array>
+		<string>_phonefree._tcp</string>
+	</array>
 </dict>
 </plist>

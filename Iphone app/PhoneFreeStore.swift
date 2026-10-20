@@ -1415,6 +1415,12 @@ final class PhoneFreeStore {
     }
 
     func clearAllData() {
+        // A full wipe means the person is gone: leave the room first so the
+        // other phone knows, then clear everything local.
+        if let room = sharedSession, !room.isOver {
+            leaveSharedSession()
+        }
+
         events = []
         reflections = []
         plan = []
@@ -1489,6 +1495,289 @@ final class PhoneFreeStore {
         save()
     }
 
+    // MARK: - Shared sessions
+
+    /// The room this phone is in, or nil. In memory on purpose: the link (a
+    /// FaceTime call, two phones in the same room) is in memory too, so a
+    /// relaunch starts fresh instead of showing a room nobody is in any more.
+    private(set) var sharedSession: SharedSessionState?
+
+    /// The code the host shows the other person while a nearby room is open.
+    private(set) var sharedCode: String?
+
+    /// Sessions announced while this phone is looking, so the sheet can list
+    /// them. Stale offers are allowed to fail loudly rather than vanish
+    /// silently — a clear sentence beats an empty list that was full a
+    /// second ago.
+    private(set) var offeredSessions: [OfferedSession] = []
+
+    /// What the link wants the person to know: local network off, no call in
+    /// progress, an offer that went stale.
+    private(set) var sharedSessionError: String?
+
+    private var sharedLink: SharedSessionLink?
+
+    /// The offer last accepted, waiting for its link to connect. A joiner
+    /// knows what kind of room it is about to enter *only* from the offer —
+    /// id, mode, and anchor all arrive there.
+    private var acceptedOffer: OfferedSession?
+
+    /// True once anything arrived over the current link. A start that never
+    /// gets here failed, and its room is put away rather than shown empty.
+    private var sharedLinkConnected = false
+
+    /// Trip and status notices are noticed where every counter mutation
+    /// already lands — `save()` — so they need a baseline to compare against.
+    /// Seeded at load, so a launch mid-pickup cannot announce a trip that
+    /// happened while nobody was listening.
+    private var lastKnownStretchEndings = 0
+    private var lastBroadcastOnPhone: Bool?
+
+    /// The message that concludes a room gets a beat to travel before the
+    /// link it rode on disappears.
+    private var sharedTeardownTask: Task<Void, Never>?
+
+    /// This phone in the room: a stable per-install id (two phones of one
+    /// person are two participants), and a name the person chose — defaulting
+    /// to what the phone calls itself.
+    private var participantID: String {
+        let defaults = UserDefaults(suiteName: Self.appGroupID)
+        if let id = defaults?.string(forKey: "phoneFreeParticipantID") {
+            return id
+        }
+        let id = UUID().uuidString
+        defaults?.set(id, forKey: "phoneFreeParticipantID")
+        return id
+    }
+
+    var participantName: String {
+        get {
+            UserDefaults(suiteName: Self.appGroupID)?
+                .string(forKey: "phoneFreeParticipantName")
+                ?? UIDevice.current.name
+        }
+        set {
+            UserDefaults(suiteName: Self.appGroupID)?
+                .set(newValue, forKey: "phoneFreeParticipantName")
+
+            // The room hears the new name the moment it is typed.
+            if let room = sharedSession, !room.isOver {
+                let own = ownParticipant()
+                sharedLink?.send(.hello(own))
+                sharedSession?.receive(.hello(own), at: Date())
+            }
+        }
+    }
+
+    private func ownParticipant(at now: Date = Date()) -> SharedParticipant {
+        SharedParticipant(
+            id: participantID,
+            name: participantName,
+            isOnPhone: usage.isUsing(at: now),
+            lastSeen: now
+        )
+    }
+
+    /// Starts a room and offers it. `nearby` shows a code the other person
+    /// types — two phones, same place, a direct link with no server of ours
+    /// to maintain; otherwise SharePlay carries it inside a FaceTime call the
+    /// two are already in. Either way the room exists from this moment: the
+    /// starter is its first member and the shared clock starts at now.
+    func startSharedSession(mode: SharedSessionMode, nearby: Bool) {
+        let now = Date()
+        let room = SharedSessionState(
+            id: UUID().uuidString,
+            mode: mode,
+            anchor: now,
+            participants: [ownParticipant(at: now)]
+        )
+
+        closeSharedLink()
+        offeredSessions = []
+        sharedSessionError = nil
+        acceptedOffer = nil
+        lastBroadcastOnPhone = usage.isUsing(at: now)
+        sharedSession = room
+
+        if nearby {
+            let code = SharedSessionCode.generate()
+            sharedCode = code
+            let link = NearbySessionLink.host(
+                code: code,
+                sessionID: room.id,
+                mode: mode,
+                anchor: now,
+                hostName: participantName
+            )
+            sharedLink = link
+            wire(link)
+        } else {
+            sharedCode = nil
+            let link = SharePlaySessionLink()
+            sharedLink = link
+            wire(link)
+            link.startHost(
+                sessionID: room.id,
+                mode: mode,
+                anchor: now,
+                hostName: participantName
+            )
+        }
+    }
+
+    /// Look for rooms to join: nearby phones showing a code, or one started
+    /// in this phone's FaceTime call. One looking-at-a-time — anything
+    /// half-built from a previous attempt is put away first, and a live room
+    /// is never pried open by a stray search.
+    func lookForSharedSessions(nearby: Bool) {
+        if let room = sharedSession, !room.isOver { return }
+
+        closeSharedLink()
+        offeredSessions = []
+        sharedSessionError = nil
+        acceptedOffer = nil
+
+        let link: SharedSessionLink
+        if nearby {
+            link = NearbySessionLink.browse()
+        } else {
+            let sharePlay = SharePlaySessionLink()
+            sharePlay.observeOffers()
+            link = sharePlay
+        }
+        sharedLink = link
+        wire(link)
+    }
+
+    /// Accept a surfaced offer. The code gates the nearby door; SharePlay
+    /// ignores it — being in the call *is* that door.
+    func joinSharedSession(_ offer: OfferedSession, code: String?) {
+        guard let link = sharedLink else { return }
+        acceptedOffer = offer
+        sharedSessionError = nil
+        link.accept(offer, code: code)
+    }
+
+    /// Ends the room for everyone — the button, in either mode. Ending early
+    /// is an ending, not a verdict, and the same sentence says so on both
+    /// phones.
+    func endSharedSession() {
+        guard let room = sharedSession, !room.isOver else { return }
+        sharedLink?.send(.end(.byChoice))
+        sharedSession?.receive(.end(.byChoice), at: Date())
+        scheduleSharedTeardown()
+    }
+
+    /// Just me out. Own counters carries on without me; shared fate was
+    /// joint, so the engine ends it there too — the same `bye` rules any
+    /// departure runs by, wherever it comes from.
+    func leaveSharedSession() {
+        guard let room = sharedSession, !room.isOver else { return }
+        sharedLink?.send(.bye(id: participantID))
+        sharedSession?.receive(.bye(id: participantID), at: Date())
+        scheduleSharedTeardown()
+    }
+
+    /// The person has read the ending; the room is put away.
+    func dismissSharedSession() {
+        closeSharedLink()
+        sharedSession = nil
+        sharedCode = nil
+        acceptedOffer = nil
+        offeredSessions = []
+        sharedSessionError = nil
+    }
+
+    private func wire(_ link: SharedSessionLink) {
+        link.onConnected = { [weak self] in
+            self?.sharedConnected()
+        }
+        link.onMessage = { [weak self] in
+            self?.sharedReceived($0)
+        }
+        link.onParticipantLost = { [weak self] in
+            // A dead connection or a killed app is a departure — the engine
+            // already knows what a departure means for each mode.
+            self?.sharedReceived(.bye(id: $0))
+        }
+        link.onSessionOffered = { [weak self] offer in
+            guard let self, self.sharedSession == nil,
+                  !self.offeredSessions.contains(where: { $0.id == offer.id })
+            else { return }
+            self.offeredSessions.append(offer)
+        }
+        link.onError = { [weak self] message in
+            guard let self else { return }
+
+            // A start or search that never connected failed: put its empty
+            // room away rather than showing one nobody is in. Errors inside
+            // a live room stay on screen, where the person can act on them.
+            if !self.sharedLinkConnected {
+                self.closeSharedLink()
+                self.sharedSession = nil
+            }
+            self.sharedSessionError = message
+        }
+    }
+
+    private func sharedConnected() {
+        sharedLinkConnected = true
+
+        // The joiner's room exists only once the link carries the promise the
+        // offer made — built from the offer, never guessed.
+        if sharedSession == nil, let offer = acceptedOffer {
+            let now = Date()
+            sharedSession = SharedSessionState(
+                id: offer.id,
+                mode: offer.mode,
+                anchor: offer.anchor,
+                participants: [ownParticipant(at: now)]
+            )
+            lastBroadcastOnPhone = usage.isUsing(at: now)
+        }
+
+        guard let room = sharedSession, !room.isOver else { return }
+
+        // Hello is idempotent — the nearby link fires this per new peer, and
+        // a reconnect re-announces us — so every arrival leaves the roster
+        // correct.
+        let own = ownParticipant()
+        sharedLink?.send(.hello(own))
+        sharedSession?.receive(.hello(own), at: Date())
+    }
+
+    private func sharedReceived(_ message: SharedSessionMessage) {
+        guard sharedSession != nil else { return }
+        sharedSession?.receive(message, at: Date())
+
+        // A room that just concluded closes its link a beat later, so the
+        // final message that travelled actually leaves the building.
+        if sharedSession?.isOver == true {
+            scheduleSharedTeardown()
+        }
+    }
+
+    private func scheduleSharedTeardown() {
+        sharedTeardownTask?.cancel()
+        sharedTeardownTask = Task { [weak self] in
+            // A beat: the last messages are in flight on both sides, and a
+            // link torn down under them loses them.
+            try? await Task.sleep(for: .seconds(1.5))
+            guard !Task.isCancelled else { return }
+            self?.closeSharedLink()
+        }
+    }
+
+    private func closeSharedLink() {
+        sharedTeardownTask?.cancel()
+        sharedTeardownTask = nil
+        sharedLink?.close()
+        sharedLink = nil
+        sharedCode = nil
+        acceptedOffer = nil
+        sharedLinkConnected = false
+    }
+
     // MARK: - Persistence
 
     private func load() {
@@ -1545,6 +1834,10 @@ final class PhoneFreeStore {
         // usage loads empty windows while the store starts with the defaults.
         // One copy, or "today's best" and the widget disagree on day one.
         usage.sleepWindows = windows
+
+        // The pickup counter is read before anything can save, so the first
+        // save of a fresh launch doesn't announce a trip nobody watched.
+        lastKnownStretchEndings = usage.stretchEndings
 
         showingOnboarding = !defaults.bool(forKey: "phoneFreeOnboarded")
 
@@ -1660,6 +1953,32 @@ final class PhoneFreeStore {
         // Every window edit lands here (the settings sheet funnels through
         // save()), so the in-memory mirror can never trail the saved copy.
         usage.sleepWindows = windows
+
+        // Every counter mutation lands here, so this is where the room hears
+        // about the one thing shared fate cares about: the phone going back
+        // in hand past grace. The bookkeeping runs whether or not this phone
+        // is in a room — starting one later must not replay old trips.
+        if usage.stretchEndings != lastKnownStretchEndings {
+            let tripped = usage.stretchEndings > lastKnownStretchEndings
+            lastKnownStretchEndings = usage.stretchEndings
+
+            if tripped, sharedSession?.isOver == false {
+                let own = ownParticipant()
+                sharedLink?.send(.pickedUp(id: own.id, name: own.name))
+                sharedSession?.receive(.pickedUp(id: own.id, name: own.name), at: Date())
+                if sharedSession?.isOver == true {
+                    scheduleSharedTeardown()
+                }
+            }
+        }
+
+        let onPhone = usage.isUsing(at: Date())
+        if onPhone != lastBroadcastOnPhone, sharedSession?.isOver == false {
+            lastBroadcastOnPhone = onPhone
+            let own = ownParticipant()
+            sharedLink?.send(.status(id: own.id, isOnPhone: onPhone, at: Date()))
+            sharedSession?.receive(.status(id: own.id, isOnPhone: onPhone, at: Date()), at: Date())
+        }
 
         PhoneFreeUsage.save(usage)
 
