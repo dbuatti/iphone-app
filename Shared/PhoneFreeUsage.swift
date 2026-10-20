@@ -189,14 +189,16 @@ nonisolated enum PhoneFreeUsage {
 
         /// The number on screen.
         ///
-        /// While the phone is in use this is the frozen stretch, even once the
-        /// grace period has run out. The number never drops to 0:00 in the
-        /// user's hand: the run is recorded and restarted when the phone is
-        /// actually put down, so the earned time stays visible — and worth
-        /// defending — right up to that moment.
+        /// While the phone is in use this counts *down* from zero in red —
+        /// how long the phone has been in the hand — instead of freezing at
+        /// the earned stretch. The earned stretch is still recorded (and the
+        /// counter still restarts at zero) when the phone goes down; this is
+        /// only what the screen shows while it is up. The number is never
+        /// blanked: at the moment of pickup it reads 0:00, then goes
+        /// negative, so the cost is visible the whole time.
         func awayInterval(at now: Date) -> TimeInterval {
-            if isUsing(at: now) {
-                return frozenInterval
+            if isUsing(at: now), let usingSince {
+                return -max(0, now.timeIntervalSince(usingSince))
             }
 
             let settled = settled(at: now)
@@ -207,7 +209,7 @@ nonisolated enum PhoneFreeUsage {
         /// The date the counter counts up from when it is running, or `nil`
         /// while it is frozen or held at zero.
         func countingSince(at now: Date) -> Date? {
-            guard !isUsing(at: now) else { return nil }
+            guard !isUsing(at: now) else { return usingSince }
             return settled(at: now).lastCheckIn
         }
 
@@ -230,11 +232,10 @@ nonisolated enum PhoneFreeUsage {
         /// is away. With no windows set, the two are the same number.
         func awakeAwayInterval(at now: Date) -> TimeInterval {
             let earned = awayInterval(at: now)
-
             guard earned > 0,
                   !sleepWindows.isEmpty,
                   let anchor = awayAnchor(at: now)
-            else { return earned }
+            else { return max(0, earned) }
 
             let inWindows = PhoneFreeWindow.overlap(
                 from: anchor,

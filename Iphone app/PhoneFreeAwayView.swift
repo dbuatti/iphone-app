@@ -148,9 +148,11 @@ struct PhoneFreeAwayView: View {
         TimelineView(.periodic(from: .now, by: 1)) { context in
             let away = store.awayInterval(at: context.date)
             let progress = store.gapTargetProgress(at: context.date)
-            let tint = store.isShielded(at: context.date)
-                ? PhoneFreeTheme.reward
-                : PhoneFreeTheme.accent
+            let tint: Color = store.isUsingPhone(at: context.date)
+                ? PhoneFreeTheme.caution
+                : (store.isShielded(at: context.date)
+                    ? PhoneFreeTheme.reward
+                    : PhoneFreeTheme.accent)
 
             VStack(spacing: 16) {
                 Text(heroCaption(at: context.date))
@@ -217,7 +219,7 @@ struct PhoneFreeAwayView: View {
             .monospacedDigit()
             .minimumScaleFactor(0.5)
             .lineLimit(1)
-            .foregroundStyle(.white)
+            .foregroundStyle(away < 0 ? PhoneFreeTheme.caution : .white)
             .accessibilityLabel(PhoneFreeFormat.spoken(away))
     }
 

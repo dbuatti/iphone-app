@@ -191,6 +191,7 @@ final class PhoneFreeLiveActivityManager {
             state.pausedSeconds = usage.frozenInterval
             state.resetsAt = usage.resetsAt
             state.stretchRecorded = usage.stretchRecorded
+            state.onPhone = true
 
             if usage.isShielded(at: now) {
                 state.shieldLeft = usage.surplusRemaining(at: now)

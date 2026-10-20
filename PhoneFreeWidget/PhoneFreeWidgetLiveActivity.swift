@@ -31,6 +31,9 @@ private enum LAColor {
 
     /// Electric lime — reserved for earned rewards (surplus).
     static let lime = Color(red: 0.76, green: 1.0, blue: 0.34)
+
+    /// Soft coral — the phone is in the hand and the counter is running red.
+    static let coral = Color(red: 0.98, green: 0.49, blue: 0.60)
 }
 
 /// A solid circle in the accent colour with the activity's symbol cut out of
@@ -559,7 +562,13 @@ struct PhoneFreeWidgetLiveActivity: Widget {
         _ state: PhoneFreeWidgetAttributes.ContentState,
         isStale: Bool
     ) -> some View {
-        if state.countsUp {
+        if state.onPhone {
+            // While the phone is in the hand the counter resets to zero and
+            // runs negative in red: how long it has been used, not how long it
+            // has been away. The earned stretch is still recorded on put-down.
+            clockText(-(Date().timeIntervalSince(state.startDate)))
+                .foregroundStyle(LAColor.coral)
+        } else if state.countsUp {
             switch counterPhase(state, isStale: isStale) {
             case .counting(let since):
                 // The Dynamic Island is only ever on screen when the phone is

@@ -253,21 +253,24 @@ struct PhoneFreeSecondaryButton: View {
 nonisolated enum PhoneFreeFormat {
     /// "0:42", "12:05", "3:07:44" — the clock style used for live counters.
     static func clock(_ interval: TimeInterval) -> String {
-        let seconds = max(0, Int(interval))
+        let negative = interval < 0
+        let seconds = max(0, Int(abs(interval)))
         let hours = seconds / 3600
         let minutes = (seconds % 3600) / 60
         let remainder = seconds % 60
 
+        let body: String
         if hours > 0 {
-            return String(
+            body = String(
                 format: "%d:%02d:%02d",
                 hours,
                 minutes,
                 remainder
             )
+        } else {
+            body = String(format: "%d:%02d", minutes, remainder)
         }
-
-        return String(format: "%d:%02d", minutes, remainder)
+        return negative ? "-" + body : body
     }
 
     /// "04:12", "1:02:03" — the zero-padded style the friction gates use,

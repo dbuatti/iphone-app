@@ -43,6 +43,7 @@ nonisolated struct PhoneFreeWidgetAttributes: ActivityAttributes {
         var pausedSeconds: TimeInterval? = nil
         var resetsAt: Date? = nil
         var stretchRecorded: Bool = false
+        var onPhone: Bool = false
 
         /// While banked free time is paying for the session: how much of it
         /// is left. `nil` when no shield is active. Lets the Lock Screen and
