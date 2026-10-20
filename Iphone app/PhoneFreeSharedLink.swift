@@ -374,7 +374,7 @@ final class SharePlaySessionLink: SharedSessionLink {
     /// Both roles, one type: starting activates it; joining observes and
     /// accepts what it sees. The version travels inside it so a newer app
     /// never offers an older one something it cannot read.
-    struct SessionActivity: GroupActivity, Sendable {
+    nonisolated struct SessionActivity: GroupActivity, Sendable {
         static let activityType =
             "com.danielebuattipersonalteam.Iphoneapp.sharedsession"
 
@@ -516,7 +516,7 @@ final class SharePlaySessionLink: SharedSessionLink {
         self.messenger = messenger
 
         let receive = Task { [weak self] in
-            for await (data, context) in messenger.messages(of: Data.self) {
+            for await (data, _) in messenger.messages(of: Data.self) {
                 guard let self, let message = SharedSessionWire.decode(data) else {
                     continue
                 }

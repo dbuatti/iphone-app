@@ -575,12 +575,9 @@ final class PhoneFreeStore {
         )
         request.earliestBeginDate = Date().addingTimeInterval(delay)
 
-        do {
-            try BGTaskScheduler.shared.submit(request)
-        } catch {
-            // Refused for now (budget, throttling). The next backgrounding
-            // arms the check again.
-        }
+        // The completion-handler form captures every error condition — the
+        // synchronous submit(_:) that used to live here was deprecated.
+        BGTaskScheduler.shared.submitTaskRequest(request) { _ in }
     }
 
     /// The wake itself: read the lock state, and act on it exactly like the
