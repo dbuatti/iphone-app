@@ -512,11 +512,10 @@ final class PhoneFreeStore {
               usingSince <= backgroundedAt,
               usage.isUsing(at: now) else { return }
 
-        let shield = usage.resetAfter + usage.surplus
-        let interrupted = wasLockedWhileAway
-            || now.timeIntervalSince(backgroundedAt) >= shield
-
-        guard interrupted else { return }
+        // Only a real lock ends the session. An app that was simply
+        // backgrounded while the phone stayed unlocked was still being
+        // used, so the session carries on — no reset, no recorded stretch.
+        guard wasLockedWhileAway else { return }
 
         usage.endUse(at: max(usingSince, backgroundedAt))
     }

@@ -251,8 +251,10 @@ struct PhoneFreeWidgetLiveActivity: Widget {
         _ state: PhoneFreeWidgetAttributes.ContentState
     ) -> some View {
         let shielded = state.shieldLeft != nil
-        let tint = shielded ? LAColor.lime : LAColor.violet
-        let symbol = shielded ? "bolt.fill" : "iphone.slash"
+        let tint = state.onPhone
+            ? LAColor.coral
+            : (shielded ? LAColor.lime : LAColor.violet)
+        let symbol = state.onPhone ? "iphone" : (shielded ? "bolt.fill" : "iphone.slash")
 
         return HStack(spacing: 18) {
             ZStack {
@@ -316,7 +318,13 @@ struct PhoneFreeWidgetLiveActivity: Widget {
     private func lockScreenNumber(
         _ state: PhoneFreeWidgetAttributes.ContentState
     ) -> some View {
-        if let frozen = state.pausedSeconds, !isSettled(state) {
+        if state.onPhone {
+            // While the phone is unlocked and in use, the Lock Screen activity
+            // (visible when swiping down) shows the same negative red count as
+            // the Dynamic Island and the app.
+            clockText(-(Date().timeIntervalSince(state.startDate)))
+                .foregroundStyle(LAColor.coral)
+        } else if let frozen = state.pausedSeconds, !isSettled(state) {
             clockText(frozen)
         } else if state.pausedSeconds != nil {
             countUp(from: state.resetsAt ?? awayAnchor(state))
@@ -348,6 +356,9 @@ struct PhoneFreeWidgetLiveActivity: Widget {
     private func lockScreenCaption(
         _ state: PhoneFreeWidgetAttributes.ContentState
     ) -> String {
+        if state.onPhone {
+            return "You've been on your phone"
+        }
         if state.shieldLeft != nil {
             return "Free time is protecting your streak"
         }
