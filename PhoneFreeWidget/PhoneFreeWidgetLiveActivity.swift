@@ -323,8 +323,9 @@ struct PhoneFreeWidgetLiveActivity: Widget {
             // While the phone is in use, the Lock Screen activity (visible
             // when swiping down) shows the same negative red count as the
             // Dynamic Island and the app.
-            clockText(-(Date().timeIntervalSince(state.startDate)))
+            (Text("-") + Text(state.startDate, style: .timer))
                 .foregroundStyle(LAColor.coral)
+                .monospacedDigit()
         } else if state.pausedSeconds != nil {
             countUp(from: state.resetsAt ?? awayAnchor(state))
         } else {
@@ -579,8 +580,9 @@ struct PhoneFreeWidgetLiveActivity: Widget {
             // has been away. The earned stretch is still recorded on put-down.
             // TimelineView keeps it ticking every second — a plain Date() in
             // the body would freeze at the last activity update.
-            clockText(-(Date().timeIntervalSince(state.startDate)))
+            (Text("-") + Text(state.startDate, style: .timer))
                 .foregroundStyle(LAColor.coral)
+                .monospacedDigit()
         } else if state.countsUp {
             switch counterPhase(state, isStale: isStale) {
             case .counting(let since):
