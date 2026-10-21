@@ -140,13 +140,26 @@ final class PhoneFreeLiveActivityManager {
                 .filter { $0.content.state.countsUp }
 
             // Update every existing away activity so no stale snapshot
-            // survives on the Dynamic Island or Lock Screen.
+            // survives on the Dynamic Island or Lock Screen. If the content
+            // type flips (was in-use with pausedSeconds, now away without), end
+            // and recreate to avoid any rendering lag/flicker.
             if !countsUpActivities.isEmpty {
-                for activity in countsUpActivities {
-                    await activity.update(content)
+                let needsRecreate = countsUpActivities.contains { activity in
+                    let hadPaused = activity.content.state.pausedSeconds != nil
+                    let hasPaused = content.state.pausedSeconds != nil
+                    return hadPaused != hasPaused
                 }
-                print("showAwayCounter: updated \\(countsUpActivities.count) existing activities")
-                return
+                if needsRecreate {
+                    for activity in countsUpActivities {
+                        await activity.end(nil, dismissalPolicy: .immediate)
+                    }
+                } else {
+                    for activity in countsUpActivities {
+                        await activity.update(content)
+                    }
+                    print("showAwayCounter: updated \\(countsUpActivities.count) existing activities")
+                    return
+                }
             }
 
             // None exists — create one.
