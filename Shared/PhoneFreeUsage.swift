@@ -6,19 +6,18 @@
 //  target, so the app, the Shortcuts actions and the Lock Screen widget all
 //  agree on what the away counter says.
 //
-//  "Since you last used your phone" should not tick up while the phone is in
-//  your hand. So the counter has two moments, not one:
+//  "Since you last used your phone" counts the time the phone has been down.
+//  The counter has two moments, not one:
 //
 //   * `lastCheckIn` — where the current stretch away counts from;
 //   * `usingSince` — set while the phone is being used, `nil` otherwise.
 //
-//  While the phone is in use the counter is frozen. Put it down within the
-//  grace period (60 seconds by default) and the stretch carries on as if those
-//  seconds never happened. Still on it after the grace period and the run is
-//  over: it is recorded, and the counter restarts from zero the moment the
-//  phone is actually put down. Until then the earned stretch stays on screen —
-//  it is never blanked to 0:00 while the phone is still in hand, because on
-//  this app the number *is* the encouragement.
+//  While the phone is in use the counter reads *negative* in red — how long it
+//  has been in the hand. Put the phone down and the away counter resumes at
+//  0:00 and counts up from that moment: a lock is a put-down, and the number
+//  never carries an earned stretch across one. The stretch itself is recorded
+//  as it ends, so the streak is not lost — only the on-screen count restarts.
+//  Pick the phone up and it resets again, this time counting down.
 //
 //  Surplus is the reward layer on top of that. Finishing a phone-free goal
 //  banks free phone time; while it lasts it pays for use *past* the grace
@@ -258,9 +257,12 @@ nonisolated enum PhoneFreeUsage {
             }
         }
 
-        /// The phone has been put down. Inside the base grace the used seconds
-        /// are skipped, not counted. Past it, surplus pays for them and the
-        /// streak survives. Only when both run out does the counter reset.
+        /// The phone has been put down. The stretch on screen is recorded and
+        /// the away counter resumes at 0:00 from this moment, however briefly
+        /// the phone was in hand. Inside the base grace the used seconds are
+        /// skipped rather than charged; past it, surplus pays for them and the
+        /// streak survives. Only when both run out is the stretch counted as
+        /// lost to use (which is what shared sessions watch).
         mutating func endUse(at now: Date) {
             guard let usingSince, !isAbandoned(at: now) else {
                 self = settled(at: now)
@@ -269,18 +271,26 @@ nonisolated enum PhoneFreeUsage {
 
             let used = max(0, now.timeIntervalSince(usingSince))
 
-            if used < resetAfter + surplus, let lastCheckIn {
-                // The phone time was free — the counter skips it entirely.
-                self.lastCheckIn = lastCheckIn.addingTimeInterval(used)
+            // The stretch on screen ends the moment the phone goes down —
+            // record it and start the away counter again from zero at this
+            // moment, no matter how briefly the phone was in hand. A lock is a
+            // put-down, and the counter never carries an earned stretch across
+            // one: it resumes at 0:00 and counts up from there.
+            let earned = frozenInterval
+            if earned > 0 {
+                record(earned, endedAt: usingSince)
+            }
+
+            if used < resetAfter + surplus {
                 surplus = max(0, surplus - max(0, used - resetAfter))
             } else {
-                record(frozenInterval, endedAt: usingSince)
-                self.lastCheckIn = now
-                surplus = 0
-                // Past grace with nowhere left to pay from: the stretch is
+                // Past grace with nothing left to pay from: the stretch is
                 // over because the phone went back in hand.
+                surplus = 0
                 stretchEndings += 1
             }
+
+            self.lastCheckIn = now
             self.usingSince = nil
             stretchRecorded = false
         }
