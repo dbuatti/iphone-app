@@ -472,6 +472,14 @@ final class PhoneFreeStore {
         wasLockedWhileAway = true
         closeSessionInterruptedByLock(at: now)
 
+        // If the device is protected/unavailable in some weird state, don't
+        // flip to red. Otherwise briefly after unlock, force an immediate away
+        // push and wait to confirm before going red.
+        guard UIApplication.shared.isProtectedDataAvailable else {
+            forceSyncLockScreenCounter()
+            return
+        }
+
         // Already considered in use: nothing to wait for.
         guard !usage.isUsing(at: now) else {
             forceSyncLockScreenCounter()
