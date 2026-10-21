@@ -83,6 +83,13 @@ final class PhoneFreeStore {
         print("PF \(event): \(usage.diagnosticSummary(at: now))")
     }
 
+    /// `true` while PhoneFree is on screen.
+    ///
+    /// The Shortcuts action needs to know this. An action that runs in the
+    /// background is a return from being away, so it may earn the guard back;
+    /// one that fires while the app is open is a re-entry, and must not.
+    var appIsInForeground: Bool { isInForeground }
+
     /// Remembers when the phone was last in hand across launches, so an
     /// absence PhoneFree slept (or was killed) through is not mistaken for
     /// time on the phone. See `closeSessionInterruptedByLock(at:)`.
@@ -558,6 +565,12 @@ final class PhoneFreeStore {
     ///   A confirmation that lands with neither — the unlock timer firing while
     ///   the Lock Screen was still up — is a Face ID glance, and the session it
     ///   opens is marked unwitnessed so it can never be recorded or turn red.
+    ///
+    /// Every path into here follows a lock, so the phone really was down:
+    /// this is a return from being away, and a long enough absence earns the
+    /// guard back. (The unlock path is the most common way anyone returns to
+    /// the app, so without this the "ten minutes away and it comes back"
+    /// bargain would never fire for most people.)
     private func confirmPendingUseStart(witnessed: Bool) {
         guard let since = pendingUseSince else { return }
         cancelPendingUseStart()
@@ -566,7 +579,11 @@ final class PhoneFreeStore {
         guard !usage.isUsing(at: now) else { return }
         guard UIApplication.shared.isProtectedDataAvailable else { return }
 
-        usage.beginUse(at: since, holdsNothing: !witnessed)
+        usage.beginUse(
+            at: since,
+            wasBackgrounded: true,
+            holdsNothing: !witnessed
+        )
         save()
         forceSyncLockScreenCounter()
         logGuard(

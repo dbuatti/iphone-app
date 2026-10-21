@@ -52,7 +52,14 @@ struct StartPhoneUseIntent: LiveActivityIntent {
         var state = PhoneFreeUsage.load()
         let alreadyUsing = state.isUsing(at: now)
 
-        state.beginUse(at: now)
+        // This action runs in the background, so it is a return from being
+        // away: a long absence can earn the guard back. When it fires while
+        // PhoneFree is open it is a re-entry instead, and keeps whatever is
+        // left of the guard — the same rule the app itself follows.
+        let returnedFromBackground =
+            !(PhoneFreeStore.live?.appIsInForeground ?? false)
+
+        state.beginUse(at: now, wasBackgrounded: returnedFromBackground)
         PhoneFreeUsage.save(state)
 
         // Moving between two watched apps keeps the same session and the same
