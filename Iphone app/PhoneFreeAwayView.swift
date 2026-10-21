@@ -906,8 +906,8 @@ struct PhoneFreeAwayView: View {
 
             // The bar covers the whole shield — the guard still available plus
             // whatever free time is banked — so it shrinks at an honest, even
-            // rate. The guard is a per-stretch budget, so this can be shorter
-            // than the configured maximum when some of it has been spent.
+            // rate. The guard is a per-day budget, so this can be shorter than
+            // the configured maximum when some of it has been spent.
             let fullGrace = max(usage.guardSeconds + usage.surplus, 1)
             let tint = shielded
                 ? PhoneFreeTheme.reward

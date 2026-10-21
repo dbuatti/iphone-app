@@ -109,11 +109,12 @@ struct PhoneFreeSettingsView: View {
                         + "on where it was. Stay on it longer and the counter "
                         + "turns red and counts the time in your hand; put it "
                         + "down and it starts again from 0.\n\n"
-                        + "The guard is a budget for each stretch, not a fresh "
+                        + "The guard is a budget for the day, not a fresh "
                         + "allowance every time you pick the phone up: using it "
-                        + "spends the guard, and only being away for the full "
-                        + "time refills it. A quick lock and unlock keeps just "
-                        + "what was left."
+                        + "spends the guard, and it only comes back once a day, "
+                        + "when you have been away for at least "
+                        + PhoneFreeUsage.words(PhoneFreeUsage.guardRefillAfter)
+                        + ". A quick lock and unlock keeps just what was left."
                     )
                     .font(.footnote)
                     .foregroundStyle(PhoneFreeTheme.muted)

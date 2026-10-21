@@ -56,6 +56,8 @@ nonisolated enum PhoneFreeUsage {
     static let surplusKey = "phoneFreeSurplus"
     static let guardUsedKey = "phoneFreeGuardUsed"
     static let lastUseEndKey = "phoneFreeLastUseEnd"
+    static let witnessedKey = "phoneFreeWitnessed"
+    static let guardRefilledDayKey = "phoneFreeGuardRefilledDay"
 
     /// The most free time the bank will hold. An hour is enough to matter and
     /// small enough that it cannot quietly become "unlimited phone".
@@ -67,7 +69,14 @@ nonisolated enum PhoneFreeUsage {
     static let defaultResetAfter: TimeInterval = 60
 
     /// The grace periods offered in Settings.
-    static let resetAfterOptions: [TimeInterval] = [30, 60, 120]
+    static let resetAfterOptions: [TimeInterval] = [10, 30, 60, 120]
+
+    /// How long the phone must be genuinely away before the guard refills.
+    ///
+    /// This is the bargain the user asked for — "spend ten minutes away and the
+    /// guard comes back" — and it is deliberately much longer than the guard
+    /// itself, so it is not something a quick lock can earn.
+    static let guardRefillAfter: TimeInterval = 10 * 60
 
     /// How often the "your streak resets in…" reminder repeats.
     static let reminderInterval: TimeInterval = 15
@@ -114,6 +123,12 @@ nonisolated enum PhoneFreeUsage {
         /// nothing has been spent yet (fresh install, or an older saved state).
         var guardUsed: TimeInterval?
 
+        /// The day the guard was last refilled by being away. `nil` means it
+        /// has never been refilled this way. Kept so a refill can happen at
+        /// most once per calendar day — otherwise "ten minutes away" could be
+        /// farmed by an unlock, a minute of use, and a ten-minute lock.
+        var guardRefilledDay: Date?
+
         /// The last moment the phone was put down. The guard recharges only
         /// after the user has been away for the full guard length.
         var lastUseEnd: Date?
@@ -135,6 +150,13 @@ nonisolated enum PhoneFreeUsage {
         /// store edits them; every surface (app, widget) reads the same copy,
         /// so they all exclude the same stretches.
         var sleepWindows: [PhoneFreeWindow] = []
+
+        /// `true` when the current session was opened by an unlock that has
+        /// never been confirmed by the app actually coming to the foreground.
+        /// Such a session must not be allowed to record its stretch — it is
+        /// evidence of "the phone was unlocked", not "the phone was used" —
+        /// and must not wipe the away counter when it is closed.
+        var witnessed: Bool = true
 
         /// How many stretches have ended because the phone went back in hand
         /// past its grace — counted by exactly the two transitions that mean
@@ -159,6 +181,14 @@ nonisolated enum PhoneFreeUsage {
             return bestToday
         }
 
+        /// `true` when the guard has already been refilled by being away today.
+        /// The refill is once per calendar day, so the day the phone was away
+        /// overnight is the day's refill and no second one is granted later.
+        func hasRefilledToday(_ now: Date) -> Bool {
+            guard let guardRefilledDay else { return false }
+            return Calendar.current.isDate(guardRefilledDay, inSameDayAs: now)
+        }
+
         /// The guard still available for the open session, in seconds. It is
         /// the configured guard minus what this stretch has already spent.
         var guardSeconds: TimeInterval {
@@ -175,7 +205,8 @@ nonisolated enum PhoneFreeUsage {
             let awayGap = lastUseEnd.map {
                 max(0, now.timeIntervalSince($0))
             } ?? -1
-            let recharge = awayGap >= resetAfter ? "YES" : "no"
+            let recharge = awayGap >= PhoneFreeUsage.guardRefillAfter
+                && !hasRefilledToday(now) ? "YES" : "no"
             let guardEnd = guardEndsAt.map { Self.diagnosticStamp($0) } ?? "nil"
             let reset = resetsAt.map { Self.diagnosticStamp($0) } ?? "nil"
 
@@ -259,8 +290,14 @@ nonisolated enum PhoneFreeUsage {
         }
 
         /// `true` while the phone is being used and the session is live.
+        ///
+        /// An unwitnessed session is not use: it was opened by an unlock and
+        /// never corroborated by the app coming to the foreground, so no reader
+        /// — the counter, the red state, the stretch at stake — should believe
+        /// the phone is in hand. That is what stops a Face ID glance from
+        /// turning the Lock Screen red or wiping an away stretch.
         func isUsing(at now: Date) -> Bool {
-            usingSince != nil && !isAbandoned(at: now)
+            usingSince != nil && witnessed && !isAbandoned(at: now)
         }
 
         /// `true` once the grace period *and* the surplus have run out on the
@@ -282,7 +319,8 @@ nonisolated enum PhoneFreeUsage {
         /// Below a minute there is nothing to lose, so the app stays quiet
         /// rather than counting down over a zero.
         var hasStretchAtStake: Bool {
-            usingSince != nil
+            witnessed
+                && usingSince != nil
                 && frozenInterval >= PhoneFreeUsage.minStretchToKeep
                 && !stretchRecorded
         }
@@ -402,15 +440,26 @@ nonisolated enum PhoneFreeUsage {
         /// above all, so one continuous sitting in PhoneFree does not keep
         /// handing out a fresh guard.
         ///
-        /// - Parameter wasBackgrounded: `true` only when the app actually left
-        ///   the foreground and has now come back. It is the one fact the state
-        ///   cannot derive for itself: `lastUseEnd` is frozen at the last
-        ///   put-down, so a long sitting in the app looks identical to a long
-        ///   absence if that is all you measure. Only a real absence may close
-        ///   a session it did not watch and recharge the guard.
+        /// - Parameters:
+        ///   - now: the moment of the pick-up.
+        ///   - wasBackgrounded: `true` only when the app actually left the
+        ///     foreground and has now come back. It is the one fact the state
+        ///     cannot derive for itself: `lastUseEnd` is frozen at the last
+        ///     put-down, so a long sitting in the app looks identical to a long
+        ///     absence if that is all you measure. Only a real absence may close
+        ///     a session it did not watch and recharge the guard.
+        ///   - holdsNothing: `true` for a session confirmed by an unlock rather
+        ///     than by the app actually being opened. A Face ID glance fires
+        ///     `device unlocked` while the Lock Screen is still up, so the
+        ///     session it starts must not inherit the away stretch as the thing
+        ///     it is holding at risk. Without this, a glance that re-locks a
+        ///     second later is closed by `endUse` with the *whole away period*
+        ///     as its frozen interval — recorded as a lost stretch and wiping
+        ///     the counter to zero, for a phone that was never used.
         mutating func beginUse(
             at now: Date,
-            wasBackgrounded: Bool = false
+            wasBackgrounded: Bool = false,
+            holdsNothing: Bool = false
         ) {
             self = settled(at: now)
 
@@ -442,26 +491,36 @@ nonisolated enum PhoneFreeUsage {
             }
 
             if usingSince == nil {
-                // The guard is a per-stretch budget. Only a genuine away
-                // period — the full guard length — recharges it; a quick lock
-                // and unlock keeps whatever was left, rather than handing out
-                // a fresh minute.
+                // The guard is a per-day budget, not per-stretch. It refills
+                // when the app returns from a *genuine* away period — at least
+                // `guardRefillAfter` (ten minutes) — and at most once per
+                // calendar day. A quick lock and unlock keeps whatever is left,
+                // and neither an ordinary absence nor a single sitting can hand
+                // back a minute that has not been earned.
                 //
-                // A long enough gap is not on its own evidence of being away:
-                // within one continuous sitting `lastUseEnd` stays at the last
-                // put-down, so `now - lastUseEnd` grows past the guard length
-                // during any visit that lasts a minute — and every re-entry
-                // (the pill, the app icon, a usage-change notification) would
-                // then hand out a fresh minute. The app must actually have left
-                // the screen for the budget to come back.
+                // Two things have to be true, and neither is enough alone:
                 //
-                // With no put-down on record at all — first run, or a state
-                // written before the guard existed — the guard starts full.
+                // - The app must actually have left the screen. `lastUseEnd` is
+                //   frozen at the last put-down, so within one continuous
+                //   sitting `now - lastUseEnd` grows past any threshold during
+                //   a long visit, and every re-entry (the pill, the app icon, a
+                //   usage-change notification) would otherwise refill the guard.
+                //
+                // - The away period must be long enough. Ten minutes is the
+                //   bargain; a short absence is not a rest.
                 let gap = lastUseEnd.map { now.timeIntervalSince($0) }
+                let awayLongEnough = gap.map { $0 >= PhoneFreeUsage.guardRefillAfter } ?? false
                 let recharged: Bool
                 if let gap {
-                    recharged = wasBackgrounded && gap >= resetAfter
+                    recharged = wasBackgrounded
+                        && awayLongEnough
+                        && !hasRefilledToday(now)
+                    if recharged {
+                        guardRefilledDay = now
+                    }
                 } else {
+                    // No put-down on record at all — first run, or a state
+                    // written before the guard existed. The guard starts full.
                     recharged = true
                 }
 
@@ -471,6 +530,14 @@ nonisolated enum PhoneFreeUsage {
 
                 usingSince = now
                 stretchRecorded = false
+
+                // A glance-confirmed session holds nothing at risk and must not
+                // be treated as real use. `witnessed` is what every reader uses
+                // to decide that; `holdsNothing` only opens that door. The away
+                // anchor (`lastCheckIn`) is deliberately left alone, so the
+                // counter keeps counting from the real put-down rather than
+                // restarting at the glance.
+                witnessed = !holdsNothing
 
                 let gapText = gap.map { State.secs($0) } ?? "n/a"
                 let guardText = State.secs(guardSeconds)
@@ -505,6 +572,18 @@ nonisolated enum PhoneFreeUsage {
         /// put-down. Only the latter counts as a stretch lost to use (which is
         /// what shared sessions watch).
         mutating func endUse(at now: Date) {
+            // An unlock-confirmed session that was never corroborated by the app
+            // being opened is a glance, not use. Discard it entirely: record
+            // nothing, count no stretch ending, and leave the away anchor where
+            // it is so the counter keeps counting from the real put-down. This
+            // is the fix for a Face ID glance wiping a whole away stretch.
+            if !witnessed {
+                PhoneFreeUsage.log("endUse (unwitnessed glance discarded)", at: now)
+                self.usingSince = nil
+                self.stretchRecorded = false
+                return
+            }
+
             guard let usingSince, !isAbandoned(at: now) else {
                 PhoneFreeUsage.log("endUse (no live session / abandoned → settled)", at: now)
                 self = settled(at: now)
@@ -639,6 +718,11 @@ nonisolated enum PhoneFreeUsage {
 
             guard now.timeIntervalSince(usingSince) > 10 * 60 else { return }
 
+            // An unwitnessed session is a Face ID glance, not real use: it must
+            // not be re-anchored to now. The away stretch it holds stays intact
+            // so the counter keeps counting from the true put-down.
+            guard witnessed else { return }
+
             let used = now.timeIntervalSince(usingSince)
             let available = guardSeconds
 
@@ -692,7 +776,9 @@ nonisolated enum PhoneFreeUsage {
         /// have run past the whole shield, so the reset stands from then and
         /// the bank is spent.
         func settled(at now: Date) -> State {
-            guard isAbandoned(at: now), let resetsAt else { return self }
+            // An unwitnessed session is a glance, not use: nothing about it
+            // should be settled, recorded, or allowed to reset the counter.
+            guard witnessed, isAbandoned(at: now), let resetsAt else { return self }
 
             var copy = self
             let lost = frozenInterval
@@ -764,7 +850,7 @@ nonisolated enum PhoneFreeUsage {
             from: defaults?.data(forKey: PhoneFreeWindow.defaultsKey) ?? Data()
         )) ?? []
 
-        return State(
+        var state = State(
             lastCheckIn: defaults?.object(forKey: lastCheckInKey) as? Date,
             usingSince: defaults?.object(forKey: usingSinceKey) as? Date,
             resetAfter: resetAfter > 0 ? resetAfter : defaultResetAfter,
@@ -780,6 +866,10 @@ nonisolated enum PhoneFreeUsage {
             stretchEndings: defaults?.integer(forKey: stretchEndingsKey) ?? 0,
             stretchRecorded: defaults?.bool(forKey: stretchRecordedKey) ?? false
         )
+        state.witnessed = defaults?.bool(forKey: witnessedKey) ?? true
+        state.guardRefilledDay =
+            defaults?.object(forKey: guardRefilledDayKey) as? Date
+        return state
     }
 
     static func save(_ state: State) {
@@ -808,6 +898,7 @@ nonisolated enum PhoneFreeUsage {
 
         defaults.set(state.stretchEndings, forKey: stretchEndingsKey)
         defaults.set(state.stretchRecorded, forKey: stretchRecordedKey)
+        defaults.set(state.witnessed, forKey: witnessedKey)
 
         if let guardUsed = state.guardUsed {
             defaults.set(guardUsed, forKey: guardUsedKey)
@@ -819,6 +910,12 @@ nonisolated enum PhoneFreeUsage {
             defaults.set(lastUseEnd, forKey: lastUseEndKey)
         } else {
             defaults.removeObject(forKey: lastUseEndKey)
+        }
+
+        if let refilledDay = state.guardRefilledDay {
+            defaults.set(refilledDay, forKey: guardRefilledDayKey)
+        } else {
+            defaults.removeObject(forKey: guardRefilledDayKey)
         }
     }
 

@@ -187,9 +187,10 @@ struct PhoneFreeOnboardingView: View {
             paragraph(
                 "You can change the time in Settings. A minute is enough to "
                 + "check the time or answer one message. The guard is a budget "
-                + "for each stretch: using your phone spends it, and a full "
-                + "minute away refills it, so a quick lock and unlock doesn't "
-                + "hand you a fresh one."
+                + "for the day: using your phone spends it, and it comes back "
+                + "once a day when you have been away for at least "
+                + "\(PhoneFreeUsage.words(PhoneFreeUsage.guardRefillAfter)), so "
+                + "a quick lock and unlock doesn't hand you a fresh one."
             )
             .padding(.top, 4)
         }

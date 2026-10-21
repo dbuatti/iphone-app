@@ -298,7 +298,7 @@ final class PhoneFreeStore {
         // PhoneFree being on screen is proof the phone is in use — no need to
         // wait out the unlock grace.
         if pendingUseTriggeredByUnlock {
-            confirmPendingUseStart()
+            confirmPendingUseStart(witnessed: true)
         } else {
             cancelPendingUseStart()
         }
@@ -352,6 +352,11 @@ final class PhoneFreeStore {
         let returnedFromBackground = backgroundedAt != nil
         backgroundedAt = nil
         isInForeground = true
+        // The app is on screen, so a session opened by a glance is corroborated
+        // at last: it is real use. This is what turns an unwitnessed session
+        // witnessed — and the one path by which a Face ID glance that *does*
+        // become real use is recorded.
+        usage.witnessed = true
         usage.beginUse(at: now, wasBackgrounded: returnedFromBackground)
         save()
 
@@ -416,7 +421,7 @@ final class PhoneFreeStore {
         if pendingUseTriggeredByUnlock {
             // Switched away while waiting for unlock confirmation (e.g. to
             // another app) — that means we're past the Lock Screen.
-            confirmPendingUseStart()
+            confirmPendingUseStart(witnessed: true)
         } else {
             cancelPendingUseStart()
         }
@@ -429,7 +434,10 @@ final class PhoneFreeStore {
             // Leaving PhoneFree while the device is still unlocked means the
             // user is past the Lock Screen and into another app: that is proof
             // of use, so the unlock does not need to wait out its grace.
-            confirmPendingUseStart()
+            confirmPendingUseStart(witnessed: true)
+            // The user is in another app, so a session a glance opened is
+            // corroborated by this as well.
+            usage.witnessed = true
 
             // Still unlocked: still in use. The session stays open, so the
             // counter freezes rather than counting up. There is now other-app
@@ -526,14 +534,21 @@ final class PhoneFreeStore {
                 self.cancelPendingUseStart()
                 return
             }
-            self.confirmPendingUseStart()
+            self.confirmPendingUseStart(witnessed: false)
         }
     }
 
     /// An unlock held long enough (or the user left PhoneFree while the device
     /// stayed unlocked): the phone really is in use. The session starts from
     /// the unlock moment, not from now, so the red count is honest.
-    private func confirmPendingUseStart() {
+    ///
+    /// - Parameter witnessed: whether this confirmation is corroborated by the
+    ///   app actually being on screen, or by the user leaving PhoneFree for
+    ///   another app while the device stayed unlocked. Both are proof of use.
+    ///   A confirmation that lands with neither — the unlock timer firing while
+    ///   the Lock Screen was still up — is a Face ID glance, and the session it
+    ///   opens is marked unwitnessed so it can never be recorded or turn red.
+    private func confirmPendingUseStart(witnessed: Bool) {
         guard let since = pendingUseSince else { return }
         cancelPendingUseStart()
 
@@ -541,10 +556,14 @@ final class PhoneFreeStore {
         guard !usage.isUsing(at: now) else { return }
         guard UIApplication.shared.isProtectedDataAvailable else { return }
 
-        usage.beginUse(at: since)
+        usage.beginUse(at: since, holdsNothing: !witnessed)
         save()
         forceSyncLockScreenCounter()
-        logGuard("confirm use since \(PhoneFreeUsage.State.diagnosticStamp(since))", at: now)
+        logGuard(
+            "confirm use since \(PhoneFreeUsage.State.diagnosticStamp(since)) "
+                + "witnessed=\(witnessed ? "yes" : "no")",
+            at: now
+        )
     }
 
     private func cancelPendingUseStart() {
@@ -762,6 +781,9 @@ final class PhoneFreeStore {
                 shared.lastCheckIn = usage.lastCheckIn
                 shared.usingSince = usage.usingSince
             }
+            // The app is on screen, so an open session is witnessed — even if
+            // the copy on disk was last written as a glance.
+            shared.witnessed = true
             shared.beginUse(at: now)
         }
 
