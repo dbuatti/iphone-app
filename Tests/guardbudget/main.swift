@@ -319,6 +319,50 @@ shortVisit.beginUse(at: t0)
 shortVisit.keepAlive(at: t0.addingTimeInterval(5 * 60))
 check("a short visit leaves the bank alone", shortVisit.surplus == 1200)
 
+// 11. Regression: the app lost track of a session while the phone was down,
+//     and must not charge a whole minute of guard for it. The 22:03 log had a
+//     session open for ninety-six minutes of which the phone was face-down
+//     for all but a tenth of a second: the user started their day red, and
+//     the ninety-five minutes they were genuinely away could not earn the
+//     guard back either.
+var lost = makeState()
+lost.lastCheckIn = t0.addingTimeInterval(-3600)
+lost.beginUse(at: t0)
+// The app saw the user for a tenth of a second, then lost sight of them.
+let putDown = t0.addingTimeInterval(0.1)
+// Ninety-six minutes later the app wakes up.
+let woke = putDown.addingTimeInterval(96 * 60)
+lost = lost.settled(at: woke, seenAt: putDown)
+
+check("a lost session charges only the time in hand",
+      abs((lost.guardUsed ?? 0) - 0.1) < 0.01)
+check("the guard is still there", lost.guardSeconds > 59)
+check("the put-down is the moment the app last saw the user",
+      lost.lastUseEnd == putDown)
+check("the away counter starts at the put-down",
+      lost.lastCheckIn == putDown)
+
+// And the long absence can therefore earn the guard back.
+lost.beginUse(at: woke, wasBackgrounded: true)
+check("the long absence earns the guard back", lost.guardSeconds == 60)
+
+// With no usable idea when the phone went down — the app was killed while
+// in the foreground, so the moment it last saw the user is older than the
+// session — the shield is charged instead, because the session demonstrably
+// ran past it.
+//
+// The harnesses always pass a moment explicitly, so they never read the real
+// shared container.
+var unknown = makeState()
+unknown.lastCheckIn = t0.addingTimeInterval(-3600)
+unknown.beginUse(at: t0)
+unknown = unknown.settled(
+    at: t0.addingTimeInterval(96 * 60),
+    seenAt: t0.addingTimeInterval(-3600)
+)
+check("an unknown put-down charges the shield",
+      unknown.guardSeconds == 0)
+
 // 8d. A glance has no grace window and no reset coming. The reminders are
 //     anchored to exactly those two dates, so this is what stops a Face ID
 //     glance from firing "put your phone down or lose your stretch" nudges

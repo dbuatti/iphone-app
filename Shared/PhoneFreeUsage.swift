@@ -59,6 +59,14 @@ nonisolated enum PhoneFreeUsage {
     static let witnessedKey = "phoneFreeWitnessed"
     static let guardRefilledDayKey = "phoneFreeGuardRefilledDay"
 
+    /// The key the app writes "when PhoneFree last saw the user" under.
+    ///
+    /// The app owns it; the state machine reads it, so that an absence the
+    /// app slept through — or was killed during — is judged by the moment the
+    /// phone actually went down rather than by the moment the app happened to
+    /// wake up.
+    static let lastSeenAtKey = "phoneFreeLastSeenAt"
+
     /// The most free time the bank will hold. An hour is enough to matter and
     /// small enough that it cannot quietly become "unlimited phone".
     static let maxSurplus: TimeInterval = 60 * 60
@@ -157,6 +165,19 @@ nonisolated enum PhoneFreeUsage {
         /// evidence of "the phone was unlocked", not "the phone was used" —
         /// and must not wipe the away counter when it is closed.
         var witnessed: Bool = true
+
+        /// When PhoneFree last saw the user — the last moment the app was in
+        /// the foreground, or the last moment it saw the device locked.
+        ///
+        /// Read live from the shared defaults rather than stored, so it is
+        /// always the app's most recent word on the matter. A session the app
+        /// lost track of is judged against this: the phone went down *then*,
+        /// and everything after it is away time.
+        nonisolated var lastSeenAt: Date? {
+            PhoneFreeUsage.defaults?.object(
+                forKey: PhoneFreeUsage.lastSeenAtKey
+            ) as? Date
+        }
 
         /// How many stretches have ended because the phone went back in hand
         /// past its grace — counted by exactly the two transitions that mean
@@ -828,15 +849,50 @@ nonisolated enum PhoneFreeUsage {
         /// An abandoned session folded into `lastCheckIn`: it is assumed to
         /// have run past the whole shield, so the reset stands from then and
         /// the bank is spent.
-        func settled(at now: Date) -> State {
+        /// Closes a session the app lost track of, judging it by the moment
+        /// the phone actually went down.
+        ///
+        /// - Parameter seenAt: when the app last saw the user. `nil` reads
+        ///   the live value the app writes; the harnesses pass one directly
+        ///   rather than writing to the real shared container.
+        func settled(at now: Date, seenAt seen: Date? = nil) -> State {
             // An unwitnessed session is a glance, not use: nothing about it
             // should be settled, recorded, or allowed to reset the counter.
             guard witnessed, isAbandoned(at: now), let resetsAt else { return self }
 
             var copy = self
+            let startedAt = usingSince ?? now
+
+            // The app lost track of this session, so the phone went down at
+            // the last moment the app could still see it. Everything after
+            // that is away time — the same generous reading the
+            // lock-interrupted close applies when the lock *was* seen.
+            //
+            // This matters more than it looks. The 22:03 log had a session
+            // open for ninety-six minutes of which the phone was face-down
+            // for all but a tenth of a second, and settling it charged a
+            // whole minute of guard — so the user started their day red, and
+            // the ninety-five minutes they were genuinely away could not earn
+            // the guard back either. A session the app cannot vouch for is
+            // not evidence of use.
+            let lastSeen = seen ?? lastSeenAt
+            let endedAt: Date
+            let inHand: TimeInterval
+            if let lastSeen, lastSeen > startedAt {
+                endedAt = lastSeen
+                inHand = max(0, lastSeen.timeIntervalSince(startedAt))
+            } else {
+                // The app was killed while in the foreground, so the put-down
+                // is genuinely unknown. The session demonstrably ran past the
+                // whole shield, so the shield is charged, and the rest of the
+                // time is away.
+                endedAt = resetsAt
+                inHand = resetAfter
+            }
+
             let lost = frozenInterval
             copy.record(lost, endedAt: resetsAt)
-            copy.lastCheckIn = resetsAt
+            copy.lastCheckIn = endedAt
             copy.usingSince = nil
             copy.surplus = 0
             // Abandoned means the phone was in hand past every grace — this
@@ -847,13 +903,17 @@ nonisolated enum PhoneFreeUsage {
                 copy.stretchEndings += 1
             }
             copy.stretchRecorded = false
-            // An abandoned session has spent the stretch's guard too.
-            copy.guardUsed = resetAfter
-            copy.lastUseEnd = now
+            // The guard is charged by the time the phone was actually in hand
+            // — which is only known up to the moment the app last saw it.
+            copy.guardUsed = min(resetAfter, (guardUsed ?? 0) + inHand)
+            // And the put-down is that same moment, so the time the phone
+            // really was away can still earn the guard back.
+            copy.lastUseEnd = endedAt
             PhoneFreeUsage.log(
                 "settled ABANDONED losing="
                     + "\(State.secs(frozenInterval)) "
-                    + "guardResetTo=\(State.secs(resetAfter))",
+                    + "inHand=\(State.secs(inHand)) "
+                    + "ended=\(State.diagnosticStamp(endedAt))",
                 at: now
             )
             return copy

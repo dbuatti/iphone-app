@@ -25,7 +25,7 @@ which rule.
 
 | Suite | What it pins |
 | --- | --- |
-| `guardbudget` | The guard as a budget: what spends it, what recharges it, and the two traps that cost real hours to find — a re-entry inside one sitting must not refill it, and a Face ID glance must not be able to record a stretch it never lost. |
+| `guardbudget` | The guard as a budget: what spends it, what recharges it, and the traps that cost real hours to find — a re-entry inside one sitting must not refill it, a Face ID glance must not be able to record a stretch it never lost, and a session the app lost track of must not be charged for time the phone spent face-down. |
 | `redhold` | The state the Lock Screen reads when the guard is spent and the phone was put down while the app was suspended — the "hold the red reading" fix, which depends on the state really being the guard-already-over state. |
 | `devicetests` | The logic behind the device tests that can only be verified by eye: what the Lock Screen and the Dynamic Island will draw, and when. |
 | `guarddump` | A tool, not a test. It prints the state machine's decisions for a scripted session, so a new rule can be *watched* as well as checked. |
@@ -54,6 +54,11 @@ non-zero if anything failed.
 unreliable for dates near the 1970 epoch — it puts two times on the same
 afternoon in different days. The once-a-day guard refill depends on that
 comparison, so the harnesses start from a date in the 2020s.
+
+**Pass the "last seen" moment explicitly.** `settled` reads the live
+`phoneFreeLastSeenAt` key when it is not given one, and the harnesses must
+never touch the real shared container. Every call therefore passes the
+moment it wants judged.
 
 **`PhoneFreeUsage.diagnosticsEnabled` is `true`**, so the harnesses print
 the state machine's own log lines as they go. That is useful — a failing
