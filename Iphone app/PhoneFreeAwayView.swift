@@ -49,6 +49,8 @@ struct PhoneFreeAwayView: View {
                     startSection
                 }
 
+                guardRefillNote
+
                 surplusCard
 
                 todaySummary
@@ -140,6 +142,66 @@ struct PhoneFreeAwayView: View {
 
             Spacer()
         }
+    }
+
+    /// The one thing about the guard that cannot be read off the number on
+    /// screen: when it comes back.
+    ///
+    /// The guard is a per-day budget, so the answer is not "in a moment" — it
+    /// comes back after a real absence of at least ten minutes, and at most
+    /// once a day. Saying that plainly is the difference between a rule and a
+    /// mystery, and it is the question people actually ask.
+    ///
+    /// It stays quiet when the guard is untouched: there is nothing to explain
+    /// about a budget that is whole.
+    private var guardRefillNote: some View {
+        TimelineView(.periodic(from: .now, by: 1)) { context in
+            let usage = store.usage
+            let using = store.isUsingPhone(at: context.date)
+            let note = guardRefillText(usage: usage, using: using, at: context.date)
+
+            Group {
+                if let note {
+                    Text(note)
+                        .font(.caption)
+                        .foregroundStyle(PhoneFreeTheme.muted)
+                        .multilineTextAlignment(.center)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .padding(.horizontal, 8)
+                }
+            }
+        }
+    }
+
+    /// The wording, in one place so the two states cannot drift apart.
+    private func guardRefillText(
+        usage: PhoneFreeUsage.State,
+        using: Bool,
+        at date: Date
+    ) -> String? {
+        guard usage.guardSeconds <= 0 else { return nil }
+
+        let away = PhoneFreeUsage.words(PhoneFreeUsage.guardRefillAfter)
+
+        // The day's refill is gone: nothing today will bring it back.
+        guard usage.canRefillGuard(date) else {
+            return "Your guard is spent. It comes back tomorrow."
+        }
+
+        // In hand: the absence has not started yet, so the honest answer is
+        // the rule rather than a countdown to a moment that has not arrived.
+        if using {
+            return "Your guard is spent. Put it down for \(away) and it comes back."
+        }
+
+        // Down, and the absence is running: count it down.
+        if let refillAt = usage.guardRefillDate(at: date) {
+            let remaining = max(0, refillAt.timeIntervalSince(date))
+            return "Your guard is spent. It comes back in "
+                + PhoneFreeFormat.clock(remaining) + "."
+        }
+
+        return "Your guard is spent. Put it down for \(away) and it comes back."
     }
 
     // MARK: - The number that matters (no goal running)

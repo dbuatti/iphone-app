@@ -255,7 +255,8 @@ final class PhoneFreeLiveActivityManager {
         // No open session: the phone is down and the counter ticks up. No
         // later push is needed — the ticking is the Lock Screen's own job.
         guard state.pausedSeconds != nil, let resetsAt = state.resetsAt else {
-            return "away  countsUp  since=\(fmt(state.startDate))  later=-"
+            let anchor = usage.countingSince(at: now) ?? state.startDate
+            return "away  countsUp  anchor=\(fmt(anchor, from: now))  later=-"
         }
 
         // Mirrors the widget's `isSettled`: recorded, or past both the reset
@@ -267,23 +268,23 @@ final class PhoneFreeLiveActivityManager {
             || (now >= resetsAt && now >= abandonAt)
 
         if settled {
-            let anchor = usage.isUsing(at: now) ? resetsAt : (usage.guardEndsAt ?? resetsAt)
-            return "away  countsUp  since=\(fmt(anchor))  later=-"
+            let anchor = usage.countingSince(at: now) ?? state.startDate
+            return "away  countsUp  anchor=\(fmt(anchor, from: now))  later=-"
         }
 
         if let guardEnd = state.guardEndsAt, now < guardEnd {
             return "hold  guarding  frozen=\(fmt(state.pausedSeconds ?? 0))"
-                + "  endsAt=\(fmt(guardEnd))  later=guardEndsAt"
+                + "  endsAt=\(fmt(guardEnd, from: now))  later=guardEndsAt"
         }
 
         // Past the guard with the session still open: the Lock Screen holds a
         // static red `-0:00` (it cannot know the put-down moment, so it must
         // not self-tick), while the Dynamic Island ticks red from zero.
-        let needsPush = "later=resetsAt"
-        return "red  holding-static(-0:00)  islandCountingRed  resetsAt=\(fmt(resetsAt))  \(needsPush)"
+        return "red  holding-static(-0:00)  islandCountingRed"
+            + "  resetsAt=\(fmt(resetsAt, from: now))  later=resetsAt"
     }
 
-    /// "0:07" / "1:02:33" for a diagnostic line, or "0:00" for a nil date.
+    /// "0:07" / "1:02:33" for a duration in a diagnostic line.
     private static func fmt(_ interval: TimeInterval) -> String {
         let seconds = max(0, Int(interval.rounded()))
         let hours = seconds / 3600
@@ -294,10 +295,19 @@ final class PhoneFreeLiveActivityManager {
             : String(format: "%d:%02d", minutes, remainder)
     }
 
-    /// A date as an offset from now, so a log line reads "0:38" not a wall
-    /// clock — the useful fact is how far away the change is.
+    /// A date as an offset from now — "0:38 ago" for a moment that has passed,
+    /// "in 0:12" for one still to come.
+    ///
+    /// The sign is the whole point. A diagnostic that cannot tell "the guard
+    /// ends in twelve seconds" from "the guard ended twelve seconds ago" is
+    /// worse than no diagnostic at all, and clamping the offset to zero (the
+    /// old behaviour) made every past date read "0:00".
     private static func fmt(_ date: Date, from now: Date = Date()) -> String {
-        fmt(date.timeIntervalSince(now))
+        let since = now.timeIntervalSince(date)
+        if since >= 0 {
+            return "\(fmt(since)) ago"
+        }
+        return "in \(fmt(-since))"
     }
 
     /// Takes the away counter off the Lock Screen (turned off in Settings).

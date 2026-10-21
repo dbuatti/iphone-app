@@ -338,7 +338,13 @@ final class PhoneFreeStore {
         // The counter freezes, and resets if this goes on past the grace
         // period. The number the gate shows is read first, so it is the
         // stretch the user is about to put at risk.
-        let gap = usage.awayInterval(at: now)
+        //
+        // The away value carries its own meaning in the sign: positive is time
+        // away, negative is the hand-time of a session that was already open.
+        // It used to be logged as a "gap", which read like a broken clock
+        // every time a re-entry printed a negative number.
+        let away = usage.awayInterval(at: now)
+        let wasInUse = usage.isUsing(at: now)
 
         // Coming back to the front is a real absence: the app left the screen,
         // and the lock that ended the stretch may have landed while it was
@@ -362,7 +368,11 @@ final class PhoneFreeStore {
 
         forceSyncLockScreenCounter()
 
-        logGuard("open gap=\(String(format: "%.2f", gap))s", at: now)
+        logGuard(
+            "open away=\(String(format: "%.2f", away))s "
+                + "inUse=\(wasInUse ? "yes" : "no")",
+            at: now
+        )
 
         if goalActive {
             guard let end = goalEnd, end > now else { return }
@@ -382,11 +392,11 @@ final class PhoneFreeStore {
         // Only show the gate on a genuine return from being away (session
         // just closed) — not when returning to PhoneFree from another app
         // while the session is still open.
-        if usage.isUsing(at: now) {
+        if wasInUse {
             return
         }
 
-        guard gap >= checkInGateThreshold, gap <= checkInGateMaxGap else {
+        guard away >= checkInGateThreshold, away <= checkInGateMaxGap else {
             return
         }
 
@@ -398,7 +408,7 @@ final class PhoneFreeStore {
         }
 
         lastCheckInGateShownAt = now
-        checkInGateGap = gap
+        checkInGateGap = away
         showingCheckInGate = true
     }
 

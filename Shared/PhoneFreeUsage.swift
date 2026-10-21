@@ -189,6 +189,27 @@ nonisolated enum PhoneFreeUsage {
             return Calendar.current.isDate(guardRefilledDay, inSameDayAs: now)
         }
 
+        /// When the guard comes back, if the user stays away long enough.
+        ///
+        /// The guard is a per-day budget, so the answer is not simply "later":
+        /// it comes back after a real absence of at least `guardRefillAfter`,
+        /// and at most once a day. `nil` means today's refill has been spent
+        /// and the next one is tomorrow.
+        ///
+        /// The date is measured from the last put-down, so it is only a real
+        /// countdown while the phone is actually down. While it is in hand the
+        /// absence has not started, and the honest answer is the rule itself.
+        func guardRefillDate(at now: Date) -> Date? {
+            guard !hasRefilledToday(now), let lastUseEnd else { return nil }
+            return lastUseEnd.addingTimeInterval(PhoneFreeUsage.guardRefillAfter)
+        }
+
+        /// `true` when the day's refill is still in hand — so the guard is one
+        /// long absence away from being whole.
+        func canRefillGuard(_ now: Date) -> Bool {
+            !hasRefilledToday(now)
+        }
+
         /// The guard still available for the open session, in seconds. It is
         /// the configured guard minus what this stretch has already spent.
         var guardSeconds: TimeInterval {
@@ -248,8 +269,14 @@ nonisolated enum PhoneFreeUsage {
         /// long, with the away counter holding its number, before the time
         /// starts counting against the user in red. Banked free time extends
         /// how long the *stretch* survives (see `resetsAt`), not this window.
+        ///
+        /// `nil` for an unwitnessed session. A Face ID glance is not a
+        /// pick-up, so it has no grace period to run out and no reset coming —
+        /// and the reminders, which are anchored to these two dates, must not
+        /// fire for a phone that was never actually picked up.
         var guardEndsAt: Date? {
-            usingSince?.addingTimeInterval(guardSeconds)
+            guard witnessed else { return nil }
+            return usingSince?.addingTimeInterval(guardSeconds)
         }
 
         /// The moment the shield ends: the available guard plus whatever
@@ -257,7 +284,8 @@ nonisolated enum PhoneFreeUsage {
         /// carries on; stay on it until it and the stretch is over, with the
         /// counter starting again at 0:00 on the put-down.
         var resetsAt: Date? {
-            usingSince?.addingTimeInterval(guardSeconds + surplus)
+            guard witnessed else { return nil }
+            return usingSince?.addingTimeInterval(guardSeconds + surplus)
         }
 
         /// How much of this session's use surplus is absorbing — the seconds
@@ -282,8 +310,12 @@ nonisolated enum PhoneFreeUsage {
         /// A session is abandoned only when it is past the shield *and* the
         /// long stop-gap, so surplus-covered use is never mistaken for an
         /// abandoned one.
+        ///
+        /// A run that has already been recorded and forfeited is not abandoned:
+        /// it *ended*, deliberately, and settling it again would count the
+        /// same stretch ending twice.
         func isAbandoned(at now: Date) -> Bool {
-            guard let usingSince else { return false }
+            guard let usingSince, !stretchRecorded else { return false }
             let used = now.timeIntervalSince(usingSince)
             return used >= guardSeconds + surplus
                 && used >= PhoneFreeUsage.abandonAfter
@@ -748,18 +780,28 @@ nonisolated enum PhoneFreeUsage {
                 // now — but the number it earned is kept on screen. The
                 // counter is never blanked to 0:00 while the phone is still in
                 // the user's hand; it restarts when the phone goes down.
+                //
+                // Two things are deliberately *not* done here, because both
+                // would move the red window and restart the hand-time count:
+                // the session is not re-anchored to now, and the guard is not
+                // zeroed. The red window is derived from `usingSince` plus the
+                // guard left when the session opened, so touching either one
+                // makes the counter that is counting up in red jump back to
+                // 0:00 — every ten minutes, for as long as the phone is in
+                // hand. The guard is charged properly at the put-down instead,
+                // which is where it is actually paid for.
                 let frozen = frozenInterval
                 record(frozen, endedAt: usingSince)
                 lastCheckIn = now.addingTimeInterval(-frozen)
                 surplus = 0
                 stretchRecorded = true
-                guardUsed = resetAfter
                 PhoneFreeUsage.log(
                     "keepAlive PAST used=\(State.secs(used)) "
                         + "losing=\(State.secs(frozen)) "
-                        + "guardResetTo=\(State.secs(resetAfter))",
+                        + "handTime=\(State.secs(now.timeIntervalSince(guardEndsAt ?? now)))",
                     at: now
                 )
+                return
             }
 
             self.usingSince = now
