@@ -202,6 +202,7 @@ final class PhoneFreeLiveActivityManager {
             state.resetsAt = usage.resetsAt
             state.stretchRecorded = usage.stretchRecorded
             state.onPhone = true
+            state.tick = Int(now.timeIntervalSince1970)
 
             if usage.isShielded(at: now) {
                 state.shieldLeft = usage.surplusRemaining(at: now)
