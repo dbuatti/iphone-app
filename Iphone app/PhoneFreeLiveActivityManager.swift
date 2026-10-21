@@ -131,16 +131,19 @@ final class PhoneFreeLiveActivityManager {
                String(force))
 
         await enqueue {
+            // Clean up any stale/duplicate away activities so the Dynamic
+            // Island and Lock Screen never render an old snapshot.
+            let countsUpActivities = Activity<PhoneFreeWidgetAttributes>.activities
+                .filter { $0.content.state.countsUp }
+            if countsUpActivities.count > 1 {
+                for activity in countsUpActivities {
+                    await activity.end(nil, dismissalPolicy: .immediate)
+                }
+            }
+
             for activity in Activity<PhoneFreeWidgetAttributes>.activities
             where !activity.content.state.countsUp {
                 await activity.end(nil, dismissalPolicy: .immediate)
-            }
-
-            if force {
-                for activity in Activity<PhoneFreeWidgetAttributes>.activities
-                where activity.content.state.countsUp {
-                    await activity.end(nil, dismissalPolicy: .immediate)
-                }
             }
 
             let existing = Activity<PhoneFreeWidgetAttributes>.activities
@@ -152,10 +155,10 @@ final class PhoneFreeLiveActivityManager {
 
             if let existing,
                !force,
-               now.timeIntervalSince(startedAt) < self.counterRefreshAge {
+               now.timeIntervalSince(startedAt) < self.counterRefreshAge,
+               countsUpActivities.count <= 1 {
                 await existing.update(content)
-                os_log("showAwayCounter: updated existing activity",
-                       log: log, type: .info)
+                print("showAwayCounter: updated existing activity")
                 return
             }
 
@@ -168,11 +171,9 @@ final class PhoneFreeLiveActivityManager {
                     pushType: nil
                 )
                 PhoneFreeUsage.defaults?.set(now, forKey: Self.counterStartedKey)
-                os_log("showAwayCounter: created new activity",
-                       log: log, type: .info)
+                print("showAwayCounter: created new activity")
             } catch {
-                os_log("showAwayCounter: create FAILED %{public}@",
-                       log: log, type: .error, String(describing: error))
+                print("showAwayCounter: create FAILED \\(error)")
             }
         }.value
     }
