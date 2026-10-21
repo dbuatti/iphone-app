@@ -578,8 +578,9 @@ struct PhoneFreeWidgetLiveActivity: Widget {
             // While the phone is in the hand the counter resets to zero and
             // runs negative in red: how long it has been used, not how long it
             // has been away. The earned stretch is still recorded on put-down.
-            // TimelineView keeps it ticking every second — a plain Date() in
-            // the body would freeze at the last activity update.
+            // `Text(date, style: .timer)` ticks by itself, so no per-second
+            // activity push is needed — those would queue up and delay the
+            // switch back to the away counter at lock.
             (Text("-") + Text(state.startDate, style: .timer))
                 .foregroundStyle(LAColor.coral)
                 .monospacedDigit()

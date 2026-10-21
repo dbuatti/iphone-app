@@ -673,12 +673,11 @@ final class PhoneFreeStore {
             save()
         }
 
-        // While the phone is in use, keep the Live Activity in step with the
-        // app every second — the Dynamic Island pill otherwise lags behind
-        // (or stays on a stale snapshot) until the next lifecycle event.
-        if isUsingPhone() {
-            syncLockScreenCounter()
-        }
+        // The in-use number is rendered by SwiftUI's own live timer
+        // (`Text(date, style: .timer)`), so the Live Activity does not need a
+        // push every second. Pushing that often spends the update budget and
+        // queues the lock transition behind a backlog — which is what made the
+        // counter keep showing the negative number for seconds after locking.
     }
 
     /// The last moment `tick` ran, so a task boundary can be spotted as it is
