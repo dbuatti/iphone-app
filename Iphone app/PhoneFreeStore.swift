@@ -317,7 +317,7 @@ final class PhoneFreeStore {
 
         forceSyncLockScreenCounter()
 
-        print("handleBecameActive: isUsing=\\(usage.isUsing(at: now)) usingSince=\\(String(describing: usage.usingSince))")
+        print("handleBecameActive: isUsing=\(usage.isUsing(at: now)) usingSince=\(String(describing: usage.usingSince))")
 
         if goalActive {
             guard let end = goalEnd, end > now else { return }

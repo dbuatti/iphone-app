@@ -120,7 +120,7 @@ final class PhoneFreeLiveActivityManager {
 
         // Diagnostic: print to Xcode console (and os_log at default level so
         // it shows in Console.app without enabling info messages).
-        print("showAwayCounter: isUsing=\\(usage.isUsing(at: now)) usingSince=\\(String(describing: usage.usingSince)) pausedSeconds=\\(String(describing: content.state.pausedSeconds)) force=\\(force)")
+        print("showAwayCounter: isUsing=\(usage.isUsing(at: now)) usingSince=\(String(describing: usage.usingSince)) pausedSeconds=\(String(describing: content.state.pausedSeconds)) force=\(force)")
         let log = OSLog(subsystem: "com.danielebuattipersonalteam.Iphoneapp",
                         category: "liveactivity")
         os_log("showAwayCounter: isUsing=%{public}@ usingSince=%{public}@ pausedSeconds=%{public}@ force=%{public}@",
