@@ -262,6 +262,7 @@ final class PhoneFreeStore {
     /// (proof they are past the Lock Screen).
     @ObservationIgnored private var pendingUseStart: Task<Void, Never>?
     private var pendingUseSince: Date?
+    private var pendingUseTriggeredByUnlock = false
 
     /// How long an unlock has to hold before it counts as the phone being in
     /// use. Brief Face ID glances at the Lock Screen stay as away time.
@@ -288,7 +289,11 @@ final class PhoneFreeStore {
 
         // PhoneFree being on screen is proof the phone is in use — no need to
         // wait out the unlock grace.
-        cancelPendingUseStart()
+        if pendingUseTriggeredByUnlock {
+            confirmPendingUseStart()
+        } else {
+            cancelPendingUseStart()
+        }
 
         // The app's own observers watch from here on; the periodic
         // background check would only burn refresh budget waking a process
@@ -389,6 +394,13 @@ final class PhoneFreeStore {
 
         // Whatever the last absence was watching for, this one starts fresh.
         stopLockWatchdog()
+        if pendingUseTriggeredByUnlock {
+            // Switched away while waiting for unlock confirmation (e.g. to
+            // another app) — that means we're past the Lock Screen.
+            confirmPendingUseStart()
+        } else {
+            cancelPendingUseStart()
+        }
 
         let now = Date()
         backgroundedAt = now
@@ -468,6 +480,11 @@ final class PhoneFreeStore {
 
         cancelPendingUseStart()
         pendingUseSince = now
+        pendingUseTriggeredByUnlock = true
+        // Push immediately so the Lock Screen stays in the "away" state
+        // (counts up) while we wait to confirm this isn't just a glance.
+        save()
+        forceSyncLockScreenCounter()
         pendingUseStart = Task { @MainActor [weak self] in
             try? await Task.sleep(for: .seconds(self?.unlockConfirmDelay ?? 5))
             guard let self, !Task.isCancelled else { return }
@@ -477,10 +494,6 @@ final class PhoneFreeStore {
             }
             self.confirmPendingUseStart()
         }
-
-        // Keep the Lock Screen counting up while the unlock is unconfirmed.
-        save()
-        forceSyncLockScreenCounter()
     }
 
     /// An unlock held long enough (or the user left PhoneFree while the device
@@ -503,6 +516,7 @@ final class PhoneFreeStore {
         pendingUseStart?.cancel()
         pendingUseStart = nil
         pendingUseSince = nil
+        pendingUseTriggeredByUnlock = false
     }
 
     // MARK: - The lock watchdog
