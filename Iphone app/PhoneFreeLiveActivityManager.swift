@@ -119,16 +119,17 @@ final class PhoneFreeLiveActivityManager {
         let content = Self.counterContent(for: usage, at: now)
 
         // Diagnostic: print to Xcode console (and os_log at default level so
-        // it shows in Console.app without enabling info messages).
-        print("showAwayCounter: isUsing=\(usage.isUsing(at: now)) usingSince=\(String(describing: usage.usingSince)) pausedSeconds=\(String(describing: content.state.pausedSeconds)) force=\(force)")
+        // it shows in Console.app without enabling info messages). The summary
+        // carries the whole guard budget, so a log alone says whether a fresh
+        // minute was handed out or not.
+        let summary = usage.diagnosticSummary(at: now)
+        print("showAwayCounter [\(stateTag(force: force))] \(summary)")
         let log = OSLog(subsystem: "com.danielebuattipersonalteam.Iphoneapp",
                         category: "liveactivity")
-        os_log("showAwayCounter: isUsing=%{public}@ usingSince=%{public}@ pausedSeconds=%{public}@ force=%{public}@",
+        os_log("showAwayCounter [%{public}@] %{public}@",
                log: log, type: .default,
-               String(usage.isUsing(at: now)),
-               String(describing: usage.usingSince),
-               String(describing: content.state.pausedSeconds),
-               String(force))
+               stateTag(force: force),
+               summary)
 
         await enqueue {
             for activity in Activity<PhoneFreeWidgetAttributes>.activities
@@ -145,34 +146,47 @@ final class PhoneFreeLiveActivityManager {
             // syncs in the same breath, and re-pushing identical content
             // spends the update budget and can stall the next real change.
             if !countsUpActivities.isEmpty {
-                for activity in countsUpActivities
-                where Self.awayContentChanged(from: activity.content.state, to: content.state) {
-                    await activity.update(content)
+                var updated = 0
+                var skipped = 0
+                for activity in countsUpActivities {
+                    if Self.awayContentChanged(
+                        from: activity.content.state,
+                        to: content.state
+                    ) {
+                        await activity.update(content)
+                        updated += 1
+                    } else {
+                        skipped += 1
+                    }
                 }
-                print("showAwayCounter: updated \(countsUpActivities.count) existing activities")
+                print(
+                    "showAwayCounter: updated \(updated) of "
+                    + "\(countsUpActivities.count) existing "
+                    + "(skipped \(skipped) unchanged)"
+                )
                 return
             }
             // None exists — create one.
             do {
-                _ = try Activity.request(
+                let created = try Activity.request(
                     attributes: PhoneFreeWidgetAttributes(name: "PhoneFree"),
                     content: content,
                     pushType: nil
                 )
                 PhoneFreeUsage.defaults?.set(now, forKey: Self.counterStartedKey)
-                print("showAwayCounter: created new activity")
+                print("showAwayCounter: created new activity \(created.id)")
             } catch {
                 print("showAwayCounter: create FAILED \(error)")
                 // Retry once after a short delay in case of a transient rate limit
                 try? await Task.sleep(for: .milliseconds(500))
                 do {
-                    _ = try Activity.request(
+                    let created = try Activity.request(
                         attributes: PhoneFreeWidgetAttributes(name: "PhoneFree"),
                         content: content,
                         pushType: nil
                     )
                     PhoneFreeUsage.defaults?.set(Date(), forKey: Self.counterStartedKey)
-                    print("showAwayCounter: created new activity (retry)")
+                    print("showAwayCounter: created new activity \(created.id) (retry)")
                 } catch {
                     print("showAwayCounter: create FAILED after retry \(error)")
                     // Last resort: try updating any existing activities
@@ -201,6 +215,12 @@ final class PhoneFreeLiveActivityManager {
         previous.endDate = .distantPast
         next.endDate = .distantPast
         return previous != next
+    }
+
+    /// Short tag for a log line: forced or not, plus a compact read of the
+    /// content that is about to be pushed.
+    private func stateTag(force: Bool) -> String {
+        force ? "force" : "sync"
     }
 
     /// Takes the away counter off the Lock Screen (turned off in Settings).

@@ -147,6 +147,44 @@ nonisolated enum PhoneFreeUsage {
             max(0, resetAfter - min(guardUsed ?? 0, resetAfter))
         }
 
+        /// One line that says everything a log reader needs to reason about
+        /// the guard: the budget, what has been spent, whether a put-down
+        /// would recharge it, the frozen stretch and where the counter sits.
+        /// Diagnostic only — never read by the UI.
+        func diagnosticSummary(at now: Date) -> String {
+            let using = usingSince.map { Self.diagnosticStamp($0) } ?? "nil"
+            let lastEnd = lastUseEnd.map { Self.diagnosticStamp($0) } ?? "nil"
+            let awayGap = lastUseEnd.map {
+                max(0, now.timeIntervalSince($0))
+            } ?? -1
+            let recharge = awayGap >= resetAfter ? "YES" : "no"
+            let guardEnd = guardEndsAt.map { Self.diagnosticStamp($0) } ?? "nil"
+            let reset = resetsAt.map { Self.diagnosticStamp($0) } ?? "nil"
+
+            return "usingSince=\(using) "
+                + "guard=\(Self.num(guardSeconds))s "
+                + "spent=\(Self.num(guardUsed ?? 0))s/\(Self.num(resetAfter))s "
+                + "away=\(awayGap < 0 ? "n/a" : "\(Self.num(awayGap))s") "
+                + "recharge=\(recharge) "
+                + "lastUseEnd=\(lastEnd) "
+                + "frozen=\(Self.num(frozenInterval))s "
+                + "guardEnd=\(guardEnd) "
+                + "resetsAt=\(reset) "
+                + "pastGuard=\(isPastGuard(at: now)) "
+                + "hasReset=\(hasReset(at: now)) "
+                + "counter=\(Self.num(displayInterval(at: now)))s"
+        }
+
+        nonisolated static func diagnosticStamp(_ date: Date) -> String {
+            let formatter = DateFormatter()
+            formatter.dateFormat = "HH:mm:ss.SSS"
+            return formatter.string(from: date)
+        }
+
+        private static func num(_ value: TimeInterval) -> String {
+            String(format: "%.2f", value)
+        }
+
         /// The moment the base grace period ends and surplus starts paying.
         var baseGraceEndsAt: Date? {
             guardEndsAt

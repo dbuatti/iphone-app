@@ -77,6 +77,12 @@ final class PhoneFreeStore {
     /// state instead.
     @ObservationIgnored private(set) static weak var live: PhoneFreeStore?
 
+    /// One line per transition that could move the guard or the counter, so a
+    /// pasted console log explains itself. Diagnostic only.
+    private func logGuard(_ event: String, at now: Date = Date()) {
+        print("PF \(event): \(usage.diagnosticSummary(at: now))")
+    }
+
     /// Remembers when the phone was last in hand across launches, so an
     /// absence PhoneFree slept (or was killed) through is not mistaken for
     /// time on the phone. See `closeSessionInterruptedByLock(at:)`.
@@ -340,7 +346,7 @@ final class PhoneFreeStore {
 
         forceSyncLockScreenCounter()
 
-        print("handleBecameActive: isUsing=\(usage.isUsing(at: now)) usingSince=\(String(describing: usage.usingSince))")
+        logGuard("open gap=\(String(format: "%.2f", gap))s", at: now)
 
         if goalActive {
             guard let end = goalEnd, end > now else { return }
@@ -427,12 +433,15 @@ final class PhoneFreeStore {
                 startLockWatchdog()
                 scheduleLockCheck(after: Self.lockCheckFirstDelay)
             }
+
+            logGuard("resign unlocked", at: now)
         } else {
             // Locked: the phone went down. The counter starts again — or
             // carries on, if this was inside the grace period.
             wasLockedWhileAway = true
             usage.endUse(at: now)
             PhoneFreeUseReminders.cancel()
+            logGuard("resign locked", at: now)
         }
 
         save()
@@ -454,6 +463,7 @@ final class PhoneFreeStore {
         PhoneFreeUseReminders.cancel()
         save()
         syncLockScreenCounter()
+        logGuard("device locked", at: now)
     }
 
     /// The device unlocked. This is *not* proof the phone is in use: iOS
@@ -474,6 +484,8 @@ final class PhoneFreeStore {
         // instant the app is opened.
         wasLockedWhileAway = true
         closeSessionInterruptedByLock(at: now)
+
+        logGuard("device unlocked", at: now)
 
         // If the device is protected/unavailable in some weird state, don't
         // flip to red. Otherwise briefly after unlock, force an immediate away
@@ -521,6 +533,7 @@ final class PhoneFreeStore {
         usage.beginUse(at: since)
         save()
         forceSyncLockScreenCounter()
+        logGuard("confirm use since \(PhoneFreeUsage.State.diagnosticStamp(since))", at: now)
     }
 
     private func cancelPendingUseStart() {
@@ -611,6 +624,7 @@ final class PhoneFreeStore {
         guard wasLockedWhileAway else { return }
 
         usage.endUse(at: max(usingSince, backgroundedAt))
+        logGuard("lock-interrupted close", at: now)
     }
 
     // MARK: - Background lock check
@@ -760,6 +774,7 @@ final class PhoneFreeStore {
 
         if usage != before {
             save()
+            logGuard("keepAlive")
         }
 
         // The in-use number is rendered by SwiftUI's own live timer
