@@ -509,11 +509,10 @@ nonisolated enum PhoneFreeUsage {
                 // - The away period must be long enough. Ten minutes is the
                 //   bargain; a short absence is not a rest.
                 let gap = lastUseEnd.map { now.timeIntervalSince($0) }
-                let awayLongEnough = gap.map { $0 >= PhoneFreeUsage.guardRefillAfter } ?? false
                 let recharged: Bool
                 if let gap {
                     recharged = wasBackgrounded
-                        && awayLongEnough
+                        && gap >= PhoneFreeUsage.guardRefillAfter
                         && !hasRefilledToday(now)
                     if recharged {
                         guardRefilledDay = now
