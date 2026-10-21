@@ -59,7 +59,6 @@ The unit becomes a **commitment**, with a bounded life:
 | `anchor` | when the commitment opens (the starter's put-down) |
 | `closesAt` | when it lapses if nothing is reported |
 | `reportedAt` | set when this phone reports a finished stretch |
-| `reportedSeconds` | the stretch that was reported |
 
 A commitment that lapses is **not a failure**. It simply closes and stops
 asking. This is the async expression of the app's existing rule: ending early is
@@ -73,7 +72,8 @@ short enough that yesterday's room does not greet you tomorrow.
 Live rooms carry `.status(id:isOnPhone:at:)` and `.pickedUp(id:name:)`. Async
 replaces the first with a report:
 
-- `.reported(id:seconds:at:)` — "I finished a stretch of this long."
+- `.reported(id:at:)` — "I did a stretch today." No number travels (see
+  Decisions, 1).
 - `.pickedUp` is **dropped entirely** async. A pickup is not news worth carrying
   for six hours, and it has no consequence in own-counters mode anyway (the
   engine already ignores it there — see `SharedSessionState.receive`).
@@ -138,7 +138,6 @@ two flows are never confused.
 | Commitment lifetime | `closesAt`, lapse handling, "not a failure" copy |
 | Report message + feed UI | replaces the live participant list async |
 | Server-time discipline | one place, documented |
-| Widget surface | optional: "Cara finished 30 min today" |
 | Harness | reduce/ordering/lapse tests, as with the counter |
 
 ## What it costs
@@ -149,19 +148,65 @@ two flows are never confused.
   async is worth it and SharePlay was not.
 - **The "no network at all" claim.** The app currently makes no outbound
   request. This adds one. The *privacy* claim survives — what travels is "Dan
-  finished a 28-minute stretch", never usage data, never the counter, never
-  which apps — but the wording has to change honestly.
+  did a stretch today", never a number, never usage data, never the counter,
+  never which apps — but the wording has to change honestly.
 
-## Open questions
+## Decisions
 
-1. **Does a report carry seconds, or just "done"?** Seconds is more rewarding
-   and more honest; "done" is lower pressure and hides comparison. The
-   non-punitive design leans toward **"done" by default, seconds optional**.
-2. **One commitment at a time, or several?** Start with one room per pair.
-3. **Does an async room appear on the Lock Screen?** Probably not — body
-   doubling should not become another thing to check.
-4. **Does anything expire server-side?** A commitment record could be deleted
-   after it lapses, rather than kept as history.
+### 1. A report says "done", not a number
+
+A report carries **"I did a stretch today"** and nothing else. Seconds are not
+sent.
+
+The reason is the whole design of this app. A number invites comparison — *she
+did 40, I did 12* — and comparison turns body doubling into a scoreboard, which
+is the mechanic the app deliberately avoids everywhere else (no streak pressure,
+no punishment, one action at a time). A second person's number also becomes a
+target, and a target you did not choose is a demand.
+
+If a number is ever wanted, it should be the sender's *own* history shown to
+themselves on the Progress tab — never what crosses the wire.
+
+This also simplifies the message: `.reported(id:at:)`, no seconds.
+
+### 2. One commitment per pair, at a time
+
+A room holds one commitment. Starting another replaces the first, or waits
+until it lapses.
+
+Several open commitments would mean a list to manage, and a list is a chore. The
+feature's promise is "one small thing you and one other person are doing" —
+anything that needs triaging has already failed.
+
+More than two people is a separate question and not answered here.
+
+### 3. No Lock Screen surface for async rooms
+
+The async room does **not** appear on the Lock Screen, on the widget, or in the
+Live Activity. (It does not today either — the widget carries no shared state —
+so this is a decision not to add it, not work to remove it.)
+
+The Lock Screen is the app's most precious surface: it is where the away counter
+lives, and it is deliberately quiet. A second person's commitment there would
+turn body doubling into another thing to check each time you pick up the phone.
+That is the opposite of what it is for.
+
+The async room lives **inside the app only**, on the sheet you deliberately
+open.
+
+### 4. A lapsed commitment is deleted, not archived
+
+Nothing is kept server-side once a commitment lapses or ends. The CloudKit
+record is deleted; the local room is cleared.
+
+Keeping history would make the feature into a record to consult — *did she do
+it last Tuesday?* — which is tracking, and tracking is not body doubling. It
+also keeps the "we store nothing about you" claim true for the only server the
+app has.
+
+The one thing worth keeping is the *pairing itself* (who you double with), so
+you do not have to re-share an iCloud link every time. The pairing is a fact
+about the relationship; the commitments are not worth keeping.
 
 ## Suggested build order
 
@@ -172,7 +217,6 @@ two flows are never confused.
 4. Commitment lifetime and lapse.
 5. Feed UI, replacing the live participant list in the async flow.
 6. Mode picker hidden in the async flow; `.ownCounters` enforced.
-7. Widget surface, if wanted.
 
 Steps 1–3 are the ones that cannot be skipped or reordered: without a
 round-tripping record and a person-level identity, everything above them is
