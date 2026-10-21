@@ -438,8 +438,9 @@ final class PhoneFreeStore {
     }
 
     /// The device locked. This is the real "put down" signal, wherever the
-    /// app happens to be, so the use session ends and the counter starts
-    /// counting the time away again from this moment.
+    /// app happens to be, so the use session ends. Inside the grace the away
+    /// counter carries on from the stretch it was showing; past it, the
+    /// counter starts again from this moment.
     func handleDeviceLocked() {
         stopLockWatchdog()
         cancelPendingUseStart()

@@ -104,8 +104,10 @@ struct PhoneFreeSettingsView: View {
             PhoneFreeCard {
                 VStack(alignment: .leading, spacing: 14) {
                     Text(
-                        "Using your phone pauses the counter. Still on it after "
-                        + "the time below, and it goes back to 0."
+                        "Using your phone pauses the counter. Put it down "
+                        + "within the time below and it carries on where it "
+                        + "was; stay on it longer and it goes back to 0 when "
+                        + "you do."
                     )
                     .font(.footnote)
                     .foregroundStyle(PhoneFreeTheme.muted)

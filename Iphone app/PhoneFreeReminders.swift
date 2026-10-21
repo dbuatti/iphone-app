@@ -91,14 +91,15 @@ nonisolated enum PhoneFreeUseReminders {
             index += 1
         }
 
-        // Already past the whole shield: the streak is gone, so there is no
-        // countdown left to run — just one nudge to put the phone down.
+        // Already past the whole shield: the stretch is over, so there is no
+        // countdown left to run — just one nudge to put the phone down and
+        // start again.
         guard resetsAt > now else {
             add(
                 delay: PhoneFreeUsage.reminderInterval,
-                title: "Your timer started again",
-                body: "That's okay. Put your phone down and it counts up "
-                    + "from there."
+                title: "Your stretch is done",
+                body: "That's okay. Put your phone down and the counter starts "
+                    + "again from zero."
             )
             return
         }
@@ -156,12 +157,14 @@ nonisolated enum PhoneFreeUseReminders {
             }
         }
 
-        // The reset itself, right on the second.
+        // The reset itself, right on the second. The counter does not restart
+        // while the phone is still in the hand — it starts again when it is
+        // put down, so that is what this says.
         add(
             delay: resetsAt.timeIntervalSince(now),
-            title: "Your timer started again",
-            body: "That's okay. It counts up again from the moment you put "
-                + "your phone down."
+            title: "Your stretch is done",
+            body: "That's okay. Put your phone down and the counter starts "
+                + "again from zero."
         )
     }
 
