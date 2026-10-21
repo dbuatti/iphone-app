@@ -393,6 +393,27 @@ nonisolated enum PhoneFreeUsage {
         /// from one app to another does not restart the grace period.
         mutating func beginUse(at now: Date) {
             self = settled(at: now)
+
+            // A session that is still nominally open but has been sitting
+            // there since before a real away period is stale: the app was
+            // suspended (or killed) through a lock it never saw, so the phone
+            // was genuinely down while `usingSince` kept pointing at an old
+            // pick-up. `isAbandoned` will not catch this until the much longer
+            // `abandonAfter`, by which point the guard would stay spent
+            // through every ordinary absence. Measure the away gap directly
+            // instead: past a full guard-length since the last put-down, the
+            // stale session is closed here so the refill below can run.
+            if usingSince != nil,
+               let lastUseEnd,
+               now.timeIntervalSince(lastUseEnd) >= resetAfter {
+                self.usingSince = nil
+                PhoneFreeUsage.log(
+                    "beginUse (stale session closed after away gap) "
+                        + "gap=\(State.secs(now.timeIntervalSince(lastUseEnd)))",
+                    at: now
+                )
+            }
+
             if usingSince == nil {
                 // The guard is a per-stretch budget. Only a genuine away
                 // period — the full guard length — recharges it; a quick lock
