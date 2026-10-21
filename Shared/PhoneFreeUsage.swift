@@ -753,6 +753,12 @@ nonisolated enum PhoneFreeUsage {
                 return
             }
 
+            // The bookkeeping is done in ten-minute lumps, and the gate is
+            // load-bearing rather than a throttle. The surplus is charged out
+            // of `used - available`, and `available` is the whole guard — so
+            // if `used` were reset every tick, the surplus would never be
+            // charged at all. Letting `used` grow past the guard length is
+            // what makes the bank actually get spent.
             guard now.timeIntervalSince(usingSince) > 10 * 60 else { return }
 
             // An unwitnessed session is a Face ID glance, not real use: it must

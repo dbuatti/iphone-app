@@ -296,6 +296,29 @@ let window = red.guardEndsAt
 check("the red window still points at the guard's end",
       window == t0.addingTimeInterval(60))
 
+// 10. The keepAlive gate is load-bearing, not a throttle. The surplus is
+//     charged out of `used - available`, and `available` is the whole guard —
+//     so if `used` were reset every tick, the bank would never be spent.
+var spending = makeState()
+spending.resetAfter = 60
+spending.surplus = 1200            // twenty minutes of free time
+spending.lastCheckIn = t0.addingTimeInterval(-3600)
+spending.beginUse(at: t0)
+// Keep the phone in hand for eleven minutes: the bank must be eaten.
+spending.keepAlive(at: t0.addingTimeInterval(11 * 60))
+check("a long visit spends the bank", spending.surplus == 600)
+check("the stretch survives a long visit", spending.frozenInterval == 3600)
+
+// A visit shorter than the gate does not touch it — the gate is what lets
+// `used` grow past the guard length in the first place.
+var shortVisit = makeState()
+shortVisit.resetAfter = 60
+shortVisit.surplus = 1200
+shortVisit.lastCheckIn = t0.addingTimeInterval(-3600)
+shortVisit.beginUse(at: t0)
+shortVisit.keepAlive(at: t0.addingTimeInterval(5 * 60))
+check("a short visit leaves the bank alone", shortVisit.surplus == 1200)
+
 // 8d. A glance has no grace window and no reset coming. The reminders are
 //     anchored to exactly those two dates, so this is what stops a Face ID
 //     glance from firing "put your phone down or lose your stretch" nudges
