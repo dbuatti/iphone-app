@@ -514,7 +514,13 @@ nonisolated enum PhoneFreeUsage {
                     recharged = wasBackgrounded
                         && gap >= PhoneFreeUsage.guardRefillAfter
                         && !hasRefilledToday(now)
-                    if recharged {
+                    if recharged, (guardUsed ?? 0) > 0 {
+                        // The day's refill is spent only when it was actually
+                        // needed. A long absence while the guard is already
+                        // full leaves the allowance alone, so it is still there
+                        // when the guard does run out. Without this, an
+                        // afternoon spent away would burn the morning's refill
+                        // on a guard that was never short.
                         guardRefilledDay = now
                     }
                 } else {
