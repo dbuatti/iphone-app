@@ -8,6 +8,7 @@
 
 import ActivityKit
 import Foundation
+import os.log
 
 @MainActor
 final class PhoneFreeLiveActivityManager {
@@ -117,17 +118,24 @@ final class PhoneFreeLiveActivityManager {
 
         let content = Self.counterContent(for: usage, at: now)
 
+        // Diagnostic logging — visible in Console.app filtered to this
+        // subsystem. Helps trace why the pill/lock screen disagree with
+        // the app.
+        let log = OSLog(subsystem: "com.danielebuattipersonalteam.Iphoneapp",
+                        category: "liveactivity")
+        os_log("showAwayCounter: isUsing=%{public}@ usingSince=%{public}@ pausedSeconds=%{public}@ force=%{public}@",
+               log: log, type: .info,
+               String(usage.isUsing(at: now)),
+               String(describing: usage.usingSince),
+               String(describing: content.state.pausedSeconds),
+               String(force))
+
         await enqueue {
-            // A goal's countdown is replaced: this is only called with no goal.
             for activity in Activity<PhoneFreeWidgetAttributes>.activities
             where !activity.content.state.countsUp {
                 await activity.end(nil, dismissalPolicy: .immediate)
             }
 
-            // When forcing (lifecycle transitions), end any stale away
-            // counter first so the Dynamic Island and Lock Screen pick up a
-            // fresh activity with the correct in-use content instead of a
-            // reused one whose startDate never moved.
             if force {
                 for activity in Activity<PhoneFreeWidgetAttributes>.activities
                 where activity.content.state.countsUp {
@@ -146,6 +154,8 @@ final class PhoneFreeLiveActivityManager {
                !force,
                now.timeIntervalSince(startedAt) < self.counterRefreshAge {
                 await existing.update(content)
+                os_log("showAwayCounter: updated existing activity",
+                       log: log, type: .info)
                 return
             }
 
@@ -158,8 +168,11 @@ final class PhoneFreeLiveActivityManager {
                     pushType: nil
                 )
                 PhoneFreeUsage.defaults?.set(now, forKey: Self.counterStartedKey)
+                os_log("showAwayCounter: created new activity",
+                       log: log, type: .info)
             } catch {
-                // Best effort — the Lock Screen widget shows the same number.
+                os_log("showAwayCounter: create FAILED %{public}@",
+                       log: log, type: .error, String(describing: error))
             }
         }.value
     }

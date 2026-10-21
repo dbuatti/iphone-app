@@ -1403,7 +1403,7 @@ final class PhoneFreeStore {
 
     func forceSyncLockScreenCounter() {
         if goalActive,
-           let start = goalStart,
+           let _ = goalStart,
            let end = goalEnd,
            end > Date() {
             syncLockScreenCounter()
