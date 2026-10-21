@@ -172,7 +172,26 @@ final class PhoneFreeLiveActivityManager {
                 PhoneFreeUsage.defaults?.set(now, forKey: Self.counterStartedKey)
                 print("showAwayCounter: created new activity")
             } catch {
-                print("showAwayCounter: create FAILED \\(error)")
+                print("showAwayCounter: create FAILED \(error)")
+                // Retry once after a short delay in case of a transient rate limit
+                try? await Task.sleep(for: .milliseconds(500))
+                do {
+                    _ = try Activity.request(
+                        attributes: PhoneFreeWidgetAttributes(name: "PhoneFree"),
+                        content: content,
+                        pushType: nil
+                    )
+                    PhoneFreeUsage.defaults?.set(Date(), forKey: Self.counterStartedKey)
+                    print("showAwayCounter: created new activity (retry)")
+                } catch {
+                    print("showAwayCounter: create FAILED after retry \(error)")
+                    // Last resort: try updating any existing activities
+                    let remaining = Activity<PhoneFreeWidgetAttributes>.activities
+                        .filter { $0.content.state.countsUp }
+                    for activity in remaining {
+                        await activity.update(content)
+                    }
+                }
             }
         }.value
     }
