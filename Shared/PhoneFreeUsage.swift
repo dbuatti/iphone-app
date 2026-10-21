@@ -87,6 +87,12 @@ nonisolated enum PhoneFreeUsage {
     /// A use session with no "put down" signal is assumed over after this.
     static let abandonAfter: TimeInterval = 30 * 60
 
+    /// The shortest stretch worth treating as a loss. Below this there is
+    /// nothing to keep, so the app stays quiet: a forfeited tap must not read
+    /// as a stretch ending (shared sessions broadcast those), and the counter
+    /// does not put a countdown over a zero. Matches `hasStretchAtStake`.
+    static let minStretchToKeep: TimeInterval = 60
+
     // MARK: - State
 
     struct State: Equatable {
@@ -276,7 +282,9 @@ nonisolated enum PhoneFreeUsage {
         /// Below a minute there is nothing to lose, so the app stays quiet
         /// rather than counting down over a zero.
         var hasStretchAtStake: Bool {
-            usingSince != nil && frozenInterval >= 60 && !stretchRecorded
+            usingSince != nil
+                && frozenInterval >= PhoneFreeUsage.minStretchToKeep
+                && !stretchRecorded
         }
 
         /// The raw away value the state machine records. While the phone is
@@ -525,7 +533,15 @@ nonisolated enum PhoneFreeUsage {
             }
 
             surplus = 0
-            stretchEndings += 1
+            // Only count this as a stretch *ending* when there was a real
+            // stretch to lose. A forfeited quick tap — the guard spent, nothing
+            // at stake — must not read as "they picked their phone up again",
+            // which is what shared sessions broadcast from this counter. The
+            // bar is the same one the app uses to decide a stretch is worth
+            // protecting (`hasStretchAtStake`).
+            if lost >= PhoneFreeUsage.minStretchToKeep {
+                stretchEndings += 1
+            }
             self.lastCheckIn = now
             self.usingSince = nil
             stretchRecorded = false
@@ -643,14 +659,18 @@ nonisolated enum PhoneFreeUsage {
             guard isAbandoned(at: now), let resetsAt else { return self }
 
             var copy = self
-            copy.record(frozenInterval, endedAt: resetsAt)
+            let lost = frozenInterval
+            copy.record(lost, endedAt: resetsAt)
             copy.lastCheckIn = resetsAt
             copy.usingSince = nil
             copy.surplus = 0
             // Abandoned means the phone was in hand past every grace — this
             // settle is a stretch lost to use, so it counts as a pickup the
-            // same way `endUse` running out does.
-            copy.stretchEndings += 1
+            // same way `endUse` running out does, and under the same bar: only
+            // when there was a real stretch to lose.
+            if lost >= PhoneFreeUsage.minStretchToKeep {
+                copy.stretchEndings += 1
+            }
             copy.stretchRecorded = false
             // An abandoned session has spent the stretch's guard too.
             copy.guardUsed = resetAfter
