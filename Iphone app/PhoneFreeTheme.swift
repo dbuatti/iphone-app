@@ -296,7 +296,8 @@ nonisolated enum PhoneFreeFormat {
     /// "12 minutes 5 seconds", "1 hour 3 minutes" — for VoiceOver, where a
     /// clock string like "12:05" would be read as a time of day.
     static func spoken(_ interval: TimeInterval) -> String {
-        let seconds = max(0, Int(interval.rounded()))
+        let negative = interval < 0
+        let seconds = max(0, Int(abs(interval).rounded()))
         let hours = seconds / 3600
         let minutes = (seconds % 3600) / 60
         let remainder = seconds % 60
@@ -318,7 +319,9 @@ nonisolated enum PhoneFreeFormat {
             )
         }
 
-        return parts.joined(separator: " ")
+        let body = parts.joined(separator: " ")
+
+        return negative ? body + " on your phone" : body
     }
 
     /// "45m", "2h 10m", "3h" — for totals, not live counters.

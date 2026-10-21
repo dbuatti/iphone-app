@@ -12,13 +12,13 @@
 //   * `lastCheckIn` — where the current stretch away counts from;
 //   * `usingSince` — set while the phone is being used, `nil` otherwise.
 //
-//  While the phone is in use the counter reads *negative* in red — how long it
-//  has been in the hand. Put the phone down inside the grace period and the
-//  away counter carries on from the stretch it was showing: a brief pickup
-//  costs only the seconds in the hand. Stay on it past the grace (and any
-//  banked free time) and the stretch ends — it is recorded, and the counter
-//  starts again at 0:00 from the moment the phone goes down. Pick the phone up
-//  and it resets to zero again, this time counting down.
+//  While the phone is in use the screen shows a guard first: for the length of
+//  the grace period the away counter holds the number it had earned, so a brief
+//  pickup costs nothing and there is room to change your mind. After that the
+//  counter turns red and counts the time in the hand, from zero. Put the phone
+//  down inside the grace and the away counter carries on from where it was;
+//  past it the stretch ends — it is recorded, and the counter starts again at
+//  0:00 from the moment the phone goes down.
 //
 //  Surplus is the reward layer on top of that. Finishing a phone-free goal
 //  banks free phone time; while it lasts it pays for use *past* the grace
@@ -126,6 +126,14 @@ nonisolated enum PhoneFreeUsage {
             usingSince?.addingTimeInterval(resetAfter)
         }
 
+        /// The moment the base grace ends: the phone can be picked up for this
+        /// long, with the away counter holding its number, before the time
+        /// starts counting against the user in red. Banked free time extends
+        /// how long the *stretch* survives (see `resetsAt`), not this window.
+        var guardEndsAt: Date? {
+            usingSince?.addingTimeInterval(resetAfter)
+        }
+
         /// The moment the shield ends: the base grace plus whatever surplus is
         /// banked. Put the phone down before it and the stretch carries on;
         /// stay on it until it and the stretch is over, with the counter
@@ -190,15 +198,12 @@ nonisolated enum PhoneFreeUsage {
             usingSince != nil && frozenInterval >= 60 && !stretchRecorded
         }
 
-        /// The number on screen.
-        ///
-        /// While the phone is in use this counts *down* from zero in red —
-        /// how long the phone has been in the hand — instead of freezing at
-        /// the earned stretch. Put it down inside the grace and the away
-        /// counter carries on from that earned stretch; past the grace the
-        /// stretch is recorded and the counter starts again at zero. The
-        /// number is never blanked: at the moment of pickup it reads 0:00,
-        /// then goes negative, so the cost is visible the whole time.
+        /// The raw away value the state machine records. While the phone is
+        /// in use this is negative hand-time; the screen does not show it
+        /// directly, because the first `resetAfter` seconds are a guard (see
+        /// `displayInterval`). Put it down inside the grace and the away
+        /// counter carries on from the earned stretch; past the grace the
+        /// stretch is recorded and the counter starts again at zero.
         func awayInterval(at now: Date) -> TimeInterval {
             if isUsing(at: now), let usingSince {
                 return -max(0, now.timeIntervalSince(usingSince))
@@ -207,6 +212,58 @@ nonisolated enum PhoneFreeUsage {
             let settled = settled(at: now)
             guard let since = settled.lastCheckIn else { return 0 }
             return max(0, now.timeIntervalSince(since))
+        }
+
+        /// What the counter shows, as opposed to what the machine records.
+        ///
+        /// The first `resetAfter` seconds of a pickup are a guard: the away
+        /// timer holds at the stretch it had earned, so a brief pickup costs
+        /// nothing and there is room to change your mind. Only once that
+        /// window runs out does the number turn negative in red, and it starts
+        /// from zero at the end of the guard — the guard itself is not charged
+        /// as phone-in-hand time. Put the phone down and the away counter
+        /// either carries on (inside the grace) or restarts (past it).
+        func displayInterval(at now: Date) -> TimeInterval {
+            guard isUsing(at: now), let usingSince else {
+                return awayInterval(at: now)
+            }
+
+            let guardEnd = usingSince.addingTimeInterval(resetAfter)
+            guard now >= guardEnd else { return frozenInterval }
+
+            return -max(0, now.timeIntervalSince(guardEnd))
+        }
+
+        /// `true` once the guard has run out and the counter is showing the
+        /// time in hand in red.
+        func isPastGuard(at now: Date) -> Bool {
+            guard isUsing(at: now), let guardEndsAt else { return false }
+            return now >= guardEndsAt
+        }
+
+        /// The live stretch with sleep excluded, for milestones and progress.
+        ///
+        /// While the phone is in use it holds at the sleep-adjusted frozen
+        /// stretch, so the bar does not drop to zero while the number holds.
+        /// It keeps holding past the guard if banked free time is still
+        /// protecting the run, and reads zero once the run is forfeit — the
+        /// red hand-time number and the stretch's fate are separate things.
+        func awakeDisplayInterval(at now: Date) -> TimeInterval {
+            guard isUsing(at: now), let usingSince else {
+                return awakeAwayInterval(at: now)
+            }
+
+            guard !hasReset(at: now) else { return 0 }
+
+            let shown = frozenInterval
+            let anchor = usingSince.addingTimeInterval(-shown)
+            let inWindows = PhoneFreeWindow.overlap(
+                from: anchor,
+                to: anchor.addingTimeInterval(shown),
+                in: sleepWindows
+            )
+
+            return max(0, shown - inWindows)
         }
 
         /// The date the counter counts up from when it is running, or `nil`

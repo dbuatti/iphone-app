@@ -104,16 +104,17 @@ struct PhoneFreeSettingsView: View {
             PhoneFreeCard {
                 VStack(alignment: .leading, spacing: 14) {
                     Text(
-                        "Using your phone pauses the counter. Put it down "
-                        + "within the time below and it carries on where it "
-                        + "was; stay on it longer and it goes back to 0 when "
-                        + "you do."
+                        "Using your phone holds the counter for the time "
+                        + "below. Put it down in that window and it carries "
+                        + "on where it was. Stay on it longer and the counter "
+                        + "turns red and counts the time in your hand; put it "
+                        + "down and it starts again from 0."
                     )
                     .font(.footnote)
                     .foregroundStyle(PhoneFreeTheme.muted)
                     .fixedSize(horizontal: false, vertical: true)
 
-                    Picker("Reset after", selection: $store.resetAfter) {
+                    Picker("Guard for", selection: $store.resetAfter) {
                         ForEach(PhoneFreeUsage.resetAfterOptions, id: \.self) {
                             Text(PhoneFreeUsage.shortSeconds($0)).tag($0)
                         }

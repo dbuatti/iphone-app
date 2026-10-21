@@ -146,9 +146,9 @@ struct PhoneFreeAwayView: View {
 
     private var awayHero: some View {
         TimelineView(.periodic(from: .now, by: 1)) { context in
-            let away = store.awayInterval(at: context.date)
+            let away = store.counterInterval(at: context.date)
             let progress = store.gapTargetProgress(at: context.date)
-            let tint: Color = store.isUsingPhone(at: context.date)
+            let tint: Color = away < 0
                 ? PhoneFreeTheme.caution
                 : (store.isShielded(at: context.date)
                     ? PhoneFreeTheme.reward
@@ -873,9 +873,13 @@ struct PhoneFreeAwayView: View {
             return "SINCE YOU LAST USED YOUR PHONE"
         }
 
+        if !store.isPastGuard(at: date) {
+            return "PUT IT DOWN TO KEEP YOUR STRETCH"
+        }
+
         return store.usage.hasReset(at: date)
             ? "PUT IT DOWN TO START THE NEXT ONE"
-            : "PAUSED — YOU'RE ON YOUR PHONE"
+            : "FREE TIME — YOUR STRETCH IS SAFE"
     }
 
     // MARK: - Using the phone
@@ -891,8 +895,14 @@ struct PhoneFreeAwayView: View {
             let left = usage.resetsAt.map {
                 max(0, $0.timeIntervalSince(context.date))
             } ?? 0
+            let guardLeft = usage.guardEndsAt.map {
+                max(0, $0.timeIntervalSince(context.date))
+            } ?? 0
 
             let shielded = store.isShielded(at: context.date)
+            // The guard comes first: the counter holds, nothing is lost, and
+            // there is still time to put the phone down.
+            let guarding = guardLeft > 0 && !reset
 
             // The bar covers the whole shield — the base grace plus whatever
             // free time is banked — so it shrinks at an honest, even rate.
@@ -919,13 +929,13 @@ struct PhoneFreeAwayView: View {
                                 reset
                                     ? "Your streak restarts when you put it "
                                         + "down"
-                                    : (shielded
-                                        ? "Free time is protecting your "
-                                            + "streak"
-                                        : "Timer resets in "
-                                            + PhoneFreeUsage.shortSeconds(
-                                                left
-                                            ))
+                                    : (guarding
+                                        ? PhoneFreeUsage.shortSeconds(guardLeft)
+                                            + " to put it down"
+                                        : (shielded
+                                            ? "Free time is protecting your "
+                                                + "streak"
+                                            : "On your phone"))
                             )
                             .font(.subheadline.weight(.semibold))
                             .monospacedDigit()
@@ -936,8 +946,8 @@ struct PhoneFreeAwayView: View {
                                 bannerDetail(
                                     frozen: usage.frozenInterval,
                                     reset: reset,
-                                    shielded: shielded,
-                                    left: left
+                                    guarding: guarding,
+                                    shieldLeft: left
                                 )
                             )
                             .font(.caption)
@@ -948,7 +958,13 @@ struct PhoneFreeAwayView: View {
                         Spacer(minLength: 0)
                     }
 
-                    if !reset {
+                    if guarding {
+                        progressBar(
+                            guardLeft / max(usage.resetAfter, 1),
+                            tint: tint,
+                            label: "Time left to put it down"
+                        )
+                    } else if !reset {
                         progressBar(
                             left / fullGrace,
                             tint: tint,
@@ -1040,25 +1056,24 @@ struct PhoneFreeAwayView: View {
     private func bannerDetail(
         frozen: TimeInterval,
         reset: Bool,
-        shielded: Bool,
-        left: TimeInterval
+        guarding: Bool,
+        shieldLeft: TimeInterval
     ) -> String {
+        if guarding {
+            return "The counter is holding at "
+                + PhoneFreeFormat.clock(frozen)
+                + ". Put the phone down and it carries on; stay on it and it "
+                + "starts counting the time in your hand in red."
+        }
+
         if reset {
             return "That's okay. The stretch above counts towards your "
                 + "record, and locking your phone now starts the next one."
         }
 
-        if shielded {
-            return "You're spending banked free time, not your streak. "
-                + "\(PhoneFreeUsage.shortSeconds(left)) left before it resets "
-                + "— lock it to save the rest."
-        }
-
-        return "You're on your phone, so the counter is paused. Lock it now "
-            + "and "
-            + (frozen >= 60
-                ? "your " + PhoneFreeFormat.clock(frozen) + " carries on."
-                : "it carries on.")
+        return "You're spending banked free time, not your streak. "
+            + "\(PhoneFreeUsage.shortSeconds(shieldLeft)) left before it "
+            + "resets — lock it to save the rest."
     }
 }
 

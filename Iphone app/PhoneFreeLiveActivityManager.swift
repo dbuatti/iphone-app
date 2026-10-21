@@ -101,8 +101,8 @@ final class PhoneFreeLiveActivityManager {
 
     /// Shows "since you last used your phone" on the Lock Screen and in the
     /// Dynamic Island when no goal is running. While the phone is in use it
-    /// shows the frozen number and the countdown to the reset instead — the
-    /// moment someone most needs to see it.
+    /// holds that number for the guard window, then counts the time in the
+    /// hand in red from zero — the moment someone most needs to see it.
     ///
     /// Safe to call often: it updates the activity in place rather than
     /// stacking new ones.
@@ -213,10 +213,10 @@ final class PhoneFreeLiveActivityManager {
         if usage.isUsing(at: now), let usingSince = usage.usingSince {
             state.startDate = usingSince
 
-            // The whole frozen stretch, even after it resets, so the Lock
-            // Screen can carry the number on from where it was rather than
-            // dropping it to zero the moment the grace period ends.
+            // The whole frozen stretch, so the guard can hold it and the
+            // Lock Screen can carry the number on from where it was.
             state.pausedSeconds = usage.frozenInterval
+            state.guardEndsAt = usage.guardEndsAt
             state.resetsAt = usage.resetsAt
             state.stretchRecorded = usage.stretchRecorded
             state.onPhone = true
@@ -226,10 +226,11 @@ final class PhoneFreeLiveActivityManager {
                 state.shieldLeft = usage.surplusRemaining(at: now)
             }
 
-            // Going stale at the reset is what switches the Dynamic Island
-            // to "held at zero" without the app having to run.
-            if let resetsAt = usage.resetsAt, resetsAt > now, !usage.stretchRecorded {
-                staleDate = resetsAt
+            // Going stale at the end of the guard is what flips the number
+            // from the held stretch to red hand-time without the app having to
+            // run. The timer itself ticks from `guardEndsAt` from then on.
+            if let guardEndsAt = usage.guardEndsAt, guardEndsAt > now {
+                staleDate = guardEndsAt
             }
         }
 

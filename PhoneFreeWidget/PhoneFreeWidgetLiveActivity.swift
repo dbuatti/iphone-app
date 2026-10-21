@@ -179,6 +179,9 @@ struct PhoneFreeWidgetLiveActivity: Widget {
     /// the right second even though the app is not running.
     private enum CounterPhase {
         case counting(since: Date)
+        /// The first grace-period seconds after a pickup: the away number
+        /// holds where it was, and the guard counts down.
+        case guarding(frozen: TimeInterval, endsAt: Date)
         case paused(
             frozen: TimeInterval,
             usingSince: Date,
@@ -187,7 +190,7 @@ struct PhoneFreeWidgetLiveActivity: Widget {
         )
         /// Past the grace and any banked free time. The run is over, but the
         /// number it earned is still shown — the app never blanks the counter
-        /// to 0:00 while the phone is in the user's hand.
+        /// to 0:00 while the phone is still in the user's hand.
         case reset(frozen: TimeInterval)
     }
 
@@ -200,7 +203,13 @@ struct PhoneFreeWidgetLiveActivity: Widget {
             return .counting(since: state.startDate)
         }
 
-        if isStale || resetsAt <= Date() || state.stretchRecorded {
+        let now = Date()
+
+        if let guardEnd = state.guardEndsAt, now < guardEnd, !isSettled(state) {
+            return .guarding(frozen: frozen, endsAt: guardEnd)
+        }
+
+        if resetsAt <= now || state.stretchRecorded {
             return .reset(frozen: frozen)
         }
 
@@ -210,6 +219,20 @@ struct PhoneFreeWidgetLiveActivity: Widget {
             resetsAt: resetsAt,
             shieldLeft: state.shieldLeft
         )
+    }
+
+    /// `true` while the pickup is still inside its grace window: the away
+    /// number holds instead of running red.
+    private func isGuarding(
+        _ state: PhoneFreeWidgetAttributes.ContentState,
+        at now: Date = Date()
+    ) -> Bool {
+        guard state.pausedSeconds != nil,
+              !isSettled(state),
+              let guardEnd = state.guardEndsAt
+        else { return false }
+
+        return now < guardEnd
     }
 
     /// "12:05" / "3:07:44" as a plain, frozen string. The widget target has no
@@ -250,12 +273,15 @@ struct PhoneFreeWidgetLiveActivity: Widget {
     private func checkInLockScreen(
         _ state: PhoneFreeWidgetAttributes.ContentState
     ) -> some View {
-        let inUse = state.pausedSeconds != nil && !isSettled(state)
+        let guarding = isGuarding(state)
+        let inUse = state.pausedSeconds != nil && !isSettled(state) && !guarding
         let shielded = state.shieldLeft != nil
         let tint = inUse
             ? LAColor.coral
             : (shielded ? LAColor.lime : LAColor.violet)
-        let symbol = inUse ? "iphone" : (shielded ? "bolt.fill" : "iphone.slash")
+        let symbol = inUse
+            ? "iphone"
+            : (guarding ? "hourglass" : (shielded ? "bolt.fill" : "iphone.slash"))
 
         return HStack(spacing: 18) {
             ZStack {
@@ -320,12 +346,17 @@ struct PhoneFreeWidgetLiveActivity: Widget {
         _ state: PhoneFreeWidgetAttributes.ContentState
     ) -> some View {
         if state.pausedSeconds != nil && !isSettled(state) {
-            // While the phone is in use, the Lock Screen activity (visible
-            // when swiping down) shows the same negative red count as the
-            // Dynamic Island and the app.
-            Text("-\(Text(state.startDate, style: .timer))")
-                .foregroundStyle(LAColor.coral)
-                .monospacedDigit()
+            if let guardEnd = state.guardEndsAt, Date() < guardEnd {
+                // The guard holds the earned stretch while there is still time
+                // to put the phone back down. Nothing is charged yet.
+                clockText(state.pausedSeconds ?? 0)
+            } else {
+                // Guard over: the same negative red count as the Dynamic
+                // Island and the app, running from the end of the guard.
+                Text("-\(countUp(from: state.guardEndsAt ?? state.startDate))")
+                    .foregroundStyle(LAColor.coral)
+                    .monospacedDigit()
+            }
         } else if state.pausedSeconds != nil {
             countUp(from: state.resetsAt ?? awayAnchor(state))
         } else {
@@ -356,8 +387,15 @@ struct PhoneFreeWidgetLiveActivity: Widget {
     private func lockScreenCaption(
         _ state: PhoneFreeWidgetAttributes.ContentState
     ) -> String {
+        if isGuarding(state) {
+            return "Put it down to keep your stretch"
+        }
+
         let inUse = state.pausedSeconds != nil && !isSettled(state)
         if inUse {
+            if state.shieldLeft != nil {
+                return "Free time is protecting your streak"
+            }
             return "You've been on your phone"
         }
         if state.shieldLeft != nil {
@@ -383,6 +421,7 @@ struct PhoneFreeWidgetLiveActivity: Widget {
     private func phaseSymbol(_ phase: CounterPhase) -> String {
         switch phase {
         case .counting: "iphone.slash"
+        case .guarding: "hourglass"
         case .paused(_, _, _, let shieldLeft):
             shieldLeft != nil ? "bolt.fill" : "pause.fill"
         case .reset: "arrow.counterclockwise"
@@ -394,6 +433,18 @@ struct PhoneFreeWidgetLiveActivity: Widget {
     private func phaseTint(_ phase: CounterPhase) -> Color {
         if case .paused(_, _, _, let shieldLeft) = phase, shieldLeft != nil {
             return LAColor.lime
+        }
+
+        if case .guarding = phase {
+            return LAColor.violet
+        }
+
+        if case .paused = phase {
+            return LAColor.coral
+        }
+
+        if case .reset = phase {
+            return LAColor.coral
         }
 
         return LAColor.violet
@@ -408,6 +459,12 @@ struct PhoneFreeWidgetLiveActivity: Widget {
         switch phase {
         case .counting:
             Text("Since you last used your phone")
+        case .guarding(_, let endsAt):
+            HStack(spacing: 4) {
+                Image(systemName: "hourglass")
+                Text("Put it down")
+                Text(endsAt, style: .timer)
+            }
         case .paused(_, _, _, let shieldLeft):
             if shieldLeft != nil {
                 HStack(spacing: 4) {
@@ -575,17 +632,22 @@ struct PhoneFreeWidgetLiveActivity: Widget {
         isStale: Bool
     ) -> some View {
         if state.pausedSeconds != nil && !isSettled(state) {
-            // While the phone is in the hand the counter resets to zero and
-            // runs negative in red: how long it has been used, not how long it
-            // has been away. The earned stretch is still recorded on put-down.
-            // `Text(date, style: .timer)` ticks by itself, so no per-second
-            // activity push is needed — those would queue up and delay the
-            // switch back to the away counter at lock.
-            Text("-\(Text(state.startDate, style: .timer))")
-                .foregroundStyle(LAColor.coral)
-                .monospacedDigit()
+            // The first `resetAfter` seconds of a pickup are a guard: the
+            // earned stretch holds, so a brief pickup costs nothing. Only
+            // after it does the counter reset to zero and run negative in red,
+            // ticking by itself from the end of the guard — no per-second
+            // activity push is needed.
+            if let guardEnd = state.guardEndsAt, Date() < guardEnd {
+                clockText(state.pausedSeconds ?? 0)
+            } else {
+                Text("-\(countUp(from: state.guardEndsAt ?? state.startDate))")
+                    .foregroundStyle(LAColor.coral)
+                    .monospacedDigit()
+            }
         } else if state.countsUp {
             switch counterPhase(state, isStale: isStale) {
+            case .guarding(let frozen, _):
+                clockText(frozen)
             case .counting(let since):
                 // The Dynamic Island is only ever on screen when the phone is
                 // unlocked and in hand, so the away counter must never be seen

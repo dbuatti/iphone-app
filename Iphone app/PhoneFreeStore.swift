@@ -229,8 +229,9 @@ final class PhoneFreeStore {
     private var promiseGateShownThisSession = false
 
     /// `true` while PhoneFree is on screen. The app being open is the one use
-    /// signal that is never in doubt, so while this is set the counter is
-    /// always frozen — however long the visit, whatever is on screen.
+    /// signal that is never in doubt, so while this is set the away counter
+    /// holds through the guard and then runs red — however long the visit,
+    /// whatever is on screen.
     private var isInForeground = false
     private var lastCheckInGateShownAt: Date?
     private var didLoad = false
@@ -1028,9 +1029,9 @@ final class PhoneFreeStore {
     // MARK: - Surplus
     //
     // Free phone time earned by finishing phone-free goals. While it lasts it
-    // pays for phone use past the grace period, so the counter stays frozen and
-    // the streak survives. The reward is deliberately immediate and visible —
-    // that is what makes it work for an ADHD brain.
+    // pays for phone use past the grace period, so the streak keeps surviving
+    // even though the counter has already gone red. The reward is deliberately
+    // immediate and visible — that is what makes it work for an ADHD brain.
 
     /// A just-earned amount, shown as a lime "＋N min" banner until it fades.
     /// `nil` when nothing was just earned.
@@ -1209,7 +1210,21 @@ final class PhoneFreeStore {
         usage.awayInterval(at: date)
     }
 
-    /// `true` while the phone is being used and the counter is frozen.
+    /// What the counter shows. For the first `resetAfter` seconds of a pickup
+    /// this is the earned stretch, held; after that it is negative red
+    /// hand-time, counted from the end of the guard. The app, the Dynamic
+    /// Island and the Lock Screen all read this.
+    func counterInterval(at date: Date = Date()) -> TimeInterval {
+        usage.displayInterval(at: date)
+    }
+
+    /// `true` once the guard has run out and the counter is counting the time
+    /// in the hand.
+    func isPastGuard(at date: Date = Date()) -> Bool {
+        !goalActive && usage.isPastGuard(at: date)
+    }
+
+    /// `true` while the phone is being used, including the guard window.
     func isUsingPhone(at date: Date = Date()) -> Bool {
         !goalActive && usage.isUsing(at: date)
     }
@@ -1356,19 +1371,19 @@ final class PhoneFreeStore {
     /// The next milestone the away counter is climbing towards. Awake time:
     /// a milestone earned by sleeping through it isn't earned at all.
     func nextGapTarget(at date: Date = Date()) -> TimeInterval? {
-        PhoneFreeTargets.next(after: usage.awakeAwayInterval(at: date))
+        PhoneFreeTargets.next(after: usage.awakeDisplayInterval(at: date))
     }
 
     /// How far the current gap has come towards its next milestone, `0...1`.
     func gapTargetProgress(at date: Date = Date()) -> Double {
-        PhoneFreeTargets.progress(for: usage.awakeAwayInterval(at: date))
+        PhoneFreeTargets.progress(for: usage.awakeDisplayInterval(at: date))
     }
 
     /// How much longer until the next milestone. `nil` once the ladder's top
     /// rung is behind you.
     func gapTimeToTarget(at date: Date = Date()) -> TimeInterval? {
         guard let target = nextGapTarget(at: date) else { return nil }
-        return max(0, target - usage.awakeAwayInterval(at: date))
+        return max(0, target - usage.awakeDisplayInterval(at: date))
     }
 
     /// A "run" of consecutive days with at least one completed goal. Framed as

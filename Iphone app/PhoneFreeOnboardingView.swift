@@ -180,8 +180,8 @@ struct PhoneFreeOnboardingView: View {
                 symbol: "arrow.counterclockwise",
                 heading: "Still on it after "
                     + PhoneFreeUsage.words(store.resetAfter),
-                detail: "It goes back to 0, and starts counting again when "
-                    + "you put the phone down."
+                detail: "The counter turns red and counts the time in your "
+                    + "hand. Put it down and it starts again from 0."
             )
 
             paragraph(

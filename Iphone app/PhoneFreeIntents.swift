@@ -76,8 +76,10 @@ struct StopPhoneUseIntent: LiveActivityIntent {
     static let description = IntentDescription(
         """
         Ends the phone use PhoneFree is counting. Inside the grace period your \
-        streak carries on; after it, the counter starts again from zero. Run \
-        it from an automation when a distracting app closes.
+        streak carries on and the counter holds; after it, the counter counts \
+        the time in your hand in red, then starts again from zero when the \
+        phone goes down. Run it from an automation when a distracting app \
+        closes.
         """
     )
 

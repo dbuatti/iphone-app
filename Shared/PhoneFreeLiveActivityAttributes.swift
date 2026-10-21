@@ -38,9 +38,13 @@ nonisolated struct PhoneFreeWidgetAttributes: ActivityAttributes {
         var countsUp: Bool = false
 
         /// While the phone is in use: the stretch that is frozen, and when it
-        /// resets. `nil` when the counter is simply counting. After
-        /// `resetsAt` the activity goes stale and shows the reset state.
+        /// resets. `nil` when the counter is simply counting. During the guard
+        /// (`guardEndsAt`) the number holds at `pausedSeconds`; after it the
+        /// number turns red and counts up from `guardEndsAt`. `resetsAt` is
+        /// when the stretch itself is forfeit (the base grace plus any banked
+        /// time).
         var pausedSeconds: TimeInterval? = nil
+        var guardEndsAt: Date? = nil
         var resetsAt: Date? = nil
         var stretchRecorded: Bool = false
         var onPhone: Bool = false
