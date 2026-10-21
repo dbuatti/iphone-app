@@ -125,7 +125,8 @@ final class PhoneFreeStore {
         set { usage.lastCheckIn = newValue }
     }
 
-    /// Seconds of use before the counter resets. Chosen in Settings.
+    /// Seconds of use before the counter turns red. A budget for the whole
+    /// stretch, chosen in Settings.
     var resetAfter: TimeInterval {
         get { usage.resetAfter }
         set {
@@ -1210,9 +1211,9 @@ final class PhoneFreeStore {
         usage.awayInterval(at: date)
     }
 
-    /// What the counter shows. For the first `resetAfter` seconds of a pickup
-    /// this is the earned stretch, held; after that it is negative red
-    /// hand-time, counted from the end of the guard. The app, the Dynamic
+    /// What the counter shows. For the guard still available on this stretch
+    /// of a pickup this is the earned stretch, held; after that it is negative
+    /// red hand-time, counted from the end of the guard. The app, the Dynamic
     /// Island and the Lock Screen all read this.
     func counterInterval(at date: Date = Date()) -> TimeInterval {
         usage.displayInterval(at: date)

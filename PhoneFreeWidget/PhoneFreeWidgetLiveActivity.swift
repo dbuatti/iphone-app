@@ -632,11 +632,11 @@ struct PhoneFreeWidgetLiveActivity: Widget {
         isStale: Bool
     ) -> some View {
         if state.pausedSeconds != nil && !isSettled(state) {
-            // The first `resetAfter` seconds of a pickup are a guard: the
-            // earned stretch holds, so a brief pickup costs nothing. Only
-            // after it does the counter reset to zero and run negative in red,
-            // ticking by itself from the end of the guard — no per-second
-            // activity push is needed.
+            // The guard seconds still available on this stretch of a pickup
+            // are a hold: the earned stretch holds, so a brief pickup costs
+            // nothing. Only after it does the counter reset to zero and run
+            // negative in red, ticking by itself from the end of the guard —
+            // no per-second activity push is needed.
             if let guardEnd = state.guardEndsAt, Date() < guardEnd {
                 clockText(state.pausedSeconds ?? 0)
             } else {

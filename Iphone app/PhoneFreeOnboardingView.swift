@@ -186,7 +186,10 @@ struct PhoneFreeOnboardingView: View {
 
             paragraph(
                 "You can change the time in Settings. A minute is enough to "
-                + "check the time or answer one message."
+                + "check the time or answer one message. The guard is a budget "
+                + "for each stretch: using your phone spends it, and a full "
+                + "minute away refills it, so a quick lock and unlock doesn't "
+                + "hand you a fresh one."
             )
             .padding(.top, 4)
         }

@@ -904,9 +904,11 @@ struct PhoneFreeAwayView: View {
             // there is still time to put the phone down.
             let guarding = guardLeft > 0 && !reset
 
-            // The bar covers the whole shield — the base grace plus whatever
-            // free time is banked — so it shrinks at an honest, even rate.
-            let fullGrace = max(usage.resetAfter + usage.surplus, 1)
+            // The bar covers the whole shield — the guard still available plus
+            // whatever free time is banked — so it shrinks at an honest, even
+            // rate. The guard is a per-stretch budget, so this can be shorter
+            // than the configured maximum when some of it has been spent.
+            let fullGrace = max(usage.guardSeconds + usage.surplus, 1)
             let tint = shielded
                 ? PhoneFreeTheme.reward
                 : PhoneFreeTheme.accent
@@ -960,7 +962,7 @@ struct PhoneFreeAwayView: View {
 
                     if guarding {
                         progressBar(
-                            guardLeft / max(usage.resetAfter, 1),
+                            guardLeft / max(usage.guardSeconds, 1),
                             tint: tint,
                             label: "Time left to put it down"
                         )

@@ -82,7 +82,6 @@ struct ContentView: View {
         }
         .task {
             store.handleBecameActive()
-            store.syncLockScreenCounter()
 
             // Categories must exist before any reminder can offer its
             // "Start phone-free" action. Permission is requested inside the
@@ -128,7 +127,6 @@ struct ContentView: View {
             switch phase {
             case .active:
                 store.handleBecameActive()
-                store.syncLockScreenCounter()
             case .background:
                 store.handleResignedActive()
             default:
@@ -191,7 +189,7 @@ struct ContentView: View {
             CheckInGateView(
                 awayFor: store.checkInGateGap,
                 bestToday: store.bestGapToday,
-                resetAfter: store.resetAfter,
+                resetAfter: store.usage.guardSeconds,
                 onPutItDown: { store.putItDown() },
                 onUseAnyway: { store.confirmPhoneUse() }
             )

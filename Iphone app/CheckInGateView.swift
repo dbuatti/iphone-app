@@ -61,9 +61,11 @@ struct CheckInGateView: View {
                         .padding(.top, 26)
 
                     Text(
-                        "Still on it past "
-                        + PhoneFreeUsage.words(resetAfter)
-                        + " and the stretch restarts from zero."
+                        resetAfter > 0
+                            ? "Still on it past "
+                                + PhoneFreeUsage.words(resetAfter)
+                                + " and the stretch restarts from zero."
+                            : "Stay on it and the stretch restarts from zero."
                     )
                         .scaledFont(14, relativeTo: .subheadline)
                         .foregroundStyle(muted)

@@ -20,6 +20,12 @@
 //  past it the stretch ends — it is recorded, and the counter starts again at
 //  0:00 from the moment the phone goes down.
 //
+//  The guard is a *budget for the stretch*, not a fresh allowance on every
+//  pickup. Using the phone spends it, and only a full guard-length away
+//  recharges it. Without that, a quick lock and unlock would hand out another
+//  whole minute and a long stretch could be kept forever by cycling in and
+//  out of the phone.
+//
 //  Surplus is the reward layer on top of that. Finishing a phone-free goal
 //  banks free phone time; while it lasts it pays for use *past* the grace
 //  period, so the counter stays frozen instead of resetting. Spend it all and
@@ -48,13 +54,16 @@ nonisolated enum PhoneFreeUsage {
     static let stretchEndingsKey = "phoneFreeStretchEndings"
     static let stretchRecordedKey = "phoneFreeStretchRecorded"
     static let surplusKey = "phoneFreeSurplus"
+    static let guardUsedKey = "phoneFreeGuardUsed"
+    static let lastUseEndKey = "phoneFreeLastUseEnd"
 
     /// The most free time the bank will hold. An hour is enough to matter and
     /// small enough that it cannot quietly become "unlimited phone".
     static let maxSurplus: TimeInterval = 60 * 60
 
-    /// Seconds of use before the counter resets. Long enough to check the
-    /// time or answer one message; short enough that scrolling never fits.
+    /// Seconds of use before the counter turns red. This is a budget for the
+    /// whole stretch, spent by use and recharged by being away for at least
+    /// this long — not a fresh allowance every time the phone is picked up.
     static let defaultResetAfter: TimeInterval = 60
 
     /// The grace periods offered in Settings.
@@ -79,6 +88,17 @@ nonisolated enum PhoneFreeUsage {
         /// resetting to zero. Doing activities buys freedom to use the phone
         /// without losing the number.
         var surplus: TimeInterval = 0
+
+        /// Guard seconds already spent in the current stretch. The guard is a
+        /// budget for the whole stretch: use spends it, and a full guard-length
+        /// away recharges it. A quick lock and unlock keeps only what is left,
+        /// so it cannot be farmed into another whole minute. `nil` means
+        /// nothing has been spent yet (fresh install, or an older saved state).
+        var guardUsed: TimeInterval?
+
+        /// The last moment the phone was put down. The guard recharges only
+        /// after the user has been away for the full guard length.
+        var lastUseEnd: Date?
 
         /// The longest *finished* stretch ever, and today's. A stretch
         /// finishes when the counter goes back to zero — not when the phone is
@@ -121,9 +141,15 @@ nonisolated enum PhoneFreeUsage {
             return bestToday
         }
 
+        /// The guard still available for the open session, in seconds. It is
+        /// the configured guard minus what this stretch has already spent.
+        var guardSeconds: TimeInterval {
+            max(0, resetAfter - min(guardUsed ?? 0, resetAfter))
+        }
+
         /// The moment the base grace period ends and surplus starts paying.
         var baseGraceEndsAt: Date? {
-            usingSince?.addingTimeInterval(resetAfter)
+            guardEndsAt
         }
 
         /// The moment the base grace ends: the phone can be picked up for this
@@ -131,23 +157,23 @@ nonisolated enum PhoneFreeUsage {
         /// starts counting against the user in red. Banked free time extends
         /// how long the *stretch* survives (see `resetsAt`), not this window.
         var guardEndsAt: Date? {
-            usingSince?.addingTimeInterval(resetAfter)
+            usingSince?.addingTimeInterval(guardSeconds)
         }
 
-        /// The moment the shield ends: the base grace plus whatever surplus is
-        /// banked. Put the phone down before it and the stretch carries on;
-        /// stay on it until it and the stretch is over, with the counter
-        /// starting again at 0:00 on the put-down.
+        /// The moment the shield ends: the available guard plus whatever
+        /// surplus is banked. Put the phone down before it and the stretch
+        /// carries on; stay on it until it and the stretch is over, with the
+        /// counter starting again at 0:00 on the put-down.
         var resetsAt: Date? {
-            usingSince?.addingTimeInterval(resetAfter + surplus)
+            usingSince?.addingTimeInterval(guardSeconds + surplus)
         }
 
         /// How much of this session's use surplus is absorbing — the seconds
-        /// used past the base grace, capped at the bank.
+        /// used past the available guard, capped at the bank.
         func surplusInUse(at now: Date) -> TimeInterval {
             guard let usingSince else { return 0 }
             let used = max(0, now.timeIntervalSince(usingSince))
-            return min(surplus, max(0, used - resetAfter))
+            return min(surplus, max(0, used - guardSeconds))
         }
 
         /// Surplus left once this session's use is paid for.
@@ -167,7 +193,7 @@ nonisolated enum PhoneFreeUsage {
         func isAbandoned(at now: Date) -> Bool {
             guard let usingSince else { return false }
             let used = now.timeIntervalSince(usingSince)
-            return used >= resetAfter + surplus
+            return used >= guardSeconds + surplus
                 && used >= PhoneFreeUsage.abandonAfter
         }
 
@@ -200,7 +226,7 @@ nonisolated enum PhoneFreeUsage {
 
         /// The raw away value the state machine records. While the phone is
         /// in use this is negative hand-time; the screen does not show it
-        /// directly, because the first `resetAfter` seconds are a guard (see
+        /// directly, because the first available guard seconds are a hold (see
         /// `displayInterval`). Put it down inside the grace and the away
         /// counter carries on from the earned stretch; past the grace the
         /// stretch is recorded and the counter starts again at zero.
@@ -216,7 +242,7 @@ nonisolated enum PhoneFreeUsage {
 
         /// What the counter shows, as opposed to what the machine records.
         ///
-        /// The first `resetAfter` seconds of a pickup are a guard: the away
+        /// The first available guard seconds of a pickup are a hold: the away
         /// timer holds at the stretch it had earned, so a brief pickup costs
         /// nothing and there is room to change your mind. Only once that
         /// window runs out does the number turn negative in red, and it starts
@@ -228,7 +254,7 @@ nonisolated enum PhoneFreeUsage {
                 return awayInterval(at: now)
             }
 
-            let guardEnd = usingSince.addingTimeInterval(resetAfter)
+            let guardEnd = usingSince.addingTimeInterval(guardSeconds)
             guard now >= guardEnd else { return frozenInterval }
 
             return -max(0, now.timeIntervalSince(guardEnd))
@@ -313,6 +339,16 @@ nonisolated enum PhoneFreeUsage {
         mutating func beginUse(at now: Date) {
             self = settled(at: now)
             if usingSince == nil {
+                // The guard is a per-stretch budget. Only a genuine away
+                // period — the full guard length — recharges it; a quick lock
+                // and unlock keeps whatever was left, rather than handing out
+                // a fresh minute. With no put-down on record (first run, or an
+                // older state) the guard starts full.
+                if let lastUseEnd,
+                   now.timeIntervalSince(lastUseEnd) >= resetAfter {
+                    guardUsed = 0
+                }
+
                 usingSince = now
                 stretchRecorded = false
             }
@@ -332,13 +368,18 @@ nonisolated enum PhoneFreeUsage {
             }
 
             let used = max(0, now.timeIntervalSince(usingSince))
+            let available = guardSeconds
 
             // Still inside the shield: the stretch carries on. Shift the away
             // anchor forward by the time the phone was in the hand, so the
             // counter resumes at exactly the value it was paused on. Use past
-            // the base grace is paid for out of the bank at one second each.
-            if !stretchRecorded, used < resetAfter + surplus {
-                surplus = max(0, surplus - max(0, used - resetAfter))
+            // the available guard is paid for out of the bank at one second
+            // each.
+            if !stretchRecorded, used < available + surplus {
+                // Spend the guard this stretch already had. Once spent, only
+                // a full guard-length away brings it back.
+                guardUsed = min(resetAfter, (guardUsed ?? 0) + used)
+                surplus = max(0, surplus - max(0, used - available))
 
                 if let lastCheckIn {
                     self.lastCheckIn = lastCheckIn.addingTimeInterval(used)
@@ -347,6 +388,7 @@ nonisolated enum PhoneFreeUsage {
                 }
 
                 self.usingSince = nil
+                lastUseEnd = now
                 return
             }
 
@@ -366,6 +408,10 @@ nonisolated enum PhoneFreeUsage {
             self.lastCheckIn = now
             self.usingSince = nil
             stretchRecorded = false
+            // The stretch is spent too: no fresh guard until the user has
+            // genuinely been away again.
+            guardUsed = resetAfter
+            lastUseEnd = now
         }
 
         /// The counter starts again from zero right now (a goal starting, a
@@ -380,6 +426,8 @@ nonisolated enum PhoneFreeUsage {
             lastCheckIn = now
             usingSince = nil
             stretchRecorded = false
+            guardUsed = nil
+            lastUseEnd = now
         }
 
         /// The counter starts again from zero right now, recording nothing on
@@ -392,6 +440,8 @@ nonisolated enum PhoneFreeUsage {
             bestToday = 0
             bestTodayDay = nil
             stretchRecorded = false
+            guardUsed = nil
+            lastUseEnd = now
         }
 
         /// Back to a fresh install, with no record of anything — used by
@@ -415,11 +465,14 @@ nonisolated enum PhoneFreeUsage {
             guard now.timeIntervalSince(usingSince) > 10 * 60 else { return }
 
             let used = now.timeIntervalSince(usingSince)
+            let available = guardSeconds
 
-            if used < resetAfter + surplus, let lastCheckIn {
+            if used < available + surplus, let lastCheckIn {
                 // Free time paid for the visit; keep the streak and the shield.
+                // The visit spends the guard budget for the stretch too.
+                guardUsed = min(resetAfter, (guardUsed ?? 0) + used)
                 self.lastCheckIn = lastCheckIn.addingTimeInterval(used)
-                surplus = max(0, surplus - max(0, used - resetAfter))
+                surplus = max(0, surplus - max(0, used - available))
             } else {
                 // The whole shield is spent, so the run is over and recorded
                 // now — but the number it earned is kept on screen. The
@@ -430,6 +483,7 @@ nonisolated enum PhoneFreeUsage {
                 lastCheckIn = now.addingTimeInterval(-frozen)
                 surplus = 0
                 stretchRecorded = true
+                guardUsed = resetAfter
             }
 
             self.usingSince = now
@@ -463,6 +517,9 @@ nonisolated enum PhoneFreeUsage {
             // same way `endUse` running out does.
             copy.stretchEndings += 1
             copy.stretchRecorded = false
+            // An abandoned session has spent the stretch's guard too.
+            copy.guardUsed = resetAfter
+            copy.lastUseEnd = now
             return copy
         }
 
@@ -515,6 +572,10 @@ nonisolated enum PhoneFreeUsage {
             usingSince: defaults?.object(forKey: usingSinceKey) as? Date,
             resetAfter: resetAfter > 0 ? resetAfter : defaultResetAfter,
             surplus: defaults?.double(forKey: surplusKey) ?? 0,
+            guardUsed: defaults?.object(forKey: guardUsedKey) != nil
+                ? defaults?.double(forKey: guardUsedKey)
+                : nil,
+            lastUseEnd: defaults?.object(forKey: lastUseEndKey) as? Date,
             bestEver: defaults?.double(forKey: bestEverKey) ?? 0,
             bestToday: defaults?.double(forKey: bestTodayKey) ?? 0,
             bestTodayDay: defaults?.object(forKey: bestTodayDayKey) as? Date,
@@ -550,6 +611,18 @@ nonisolated enum PhoneFreeUsage {
 
         defaults.set(state.stretchEndings, forKey: stretchEndingsKey)
         defaults.set(state.stretchRecorded, forKey: stretchRecordedKey)
+
+        if let guardUsed = state.guardUsed {
+            defaults.set(guardUsed, forKey: guardUsedKey)
+        } else {
+            defaults.removeObject(forKey: guardUsedKey)
+        }
+
+        if let lastUseEnd = state.lastUseEnd {
+            defaults.set(lastUseEnd, forKey: lastUseEndKey)
+        } else {
+            defaults.removeObject(forKey: lastUseEndKey)
+        }
     }
 
     /// "30 seconds", "1 minute", "2 minutes" — for sentences, where "1m"

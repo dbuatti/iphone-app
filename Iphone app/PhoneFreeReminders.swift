@@ -63,7 +63,8 @@ nonisolated enum PhoneFreeUseReminders {
         let center = UNUserNotificationCenter.current()
         let streak = PhoneFreeFormat.clock(state.frozenInterval)
         let hasStreak = state.frozenInterval >= 60
-        let baseEnd = usingSince.addingTimeInterval(state.resetAfter)
+        let baseEnd = state.guardEndsAt
+            ?? usingSince.addingTimeInterval(state.guardSeconds)
 
         var index = 0
 
