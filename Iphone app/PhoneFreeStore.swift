@@ -668,6 +668,13 @@ final class PhoneFreeStore {
         if usage != before {
             save()
         }
+
+        // While the phone is in use, keep the Live Activity in step with the
+        // app every second — the Dynamic Island pill otherwise lags behind
+        // (or stays on a stale snapshot) until the next lifecycle event.
+        if isUsingPhone() {
+            syncLockScreenCounter()
+        }
     }
 
     /// The last moment `tick` ran, so a task boundary can be spotted as it is
