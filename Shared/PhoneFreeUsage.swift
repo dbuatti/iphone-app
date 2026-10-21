@@ -72,6 +72,18 @@ nonisolated enum PhoneFreeUsage {
     /// How often the "your streak resets in…" reminder repeats.
     static let reminderInterval: TimeInterval = 15
 
+    /// Turns the state-machine diagnostics on or off. One switch: when the
+    /// guard is settled, flip this to `false` and every transition log goes
+    /// with it.
+    static let diagnosticsEnabled = true
+
+    /// One line per state-machine decision, tagged `PF usage` so it sits
+    /// beside the store's `PF open/locked/...` lines. Diagnostic only.
+    static func log(_ event: String, at now: Date) {
+        guard diagnosticsEnabled else { return }
+        print("PF usage \(event) @\(State.diagnosticStamp(now))")
+    }
+
     /// A use session with no "put down" signal is assumed over after this.
     static let abandonAfter: TimeInterval = 30 * 60
 
@@ -179,6 +191,11 @@ nonisolated enum PhoneFreeUsage {
             let formatter = DateFormatter()
             formatter.dateFormat = "HH:mm:ss.SSS"
             return formatter.string(from: date)
+        }
+
+        /// "12.34s", for diagnostics.
+        nonisolated static func secs(_ value: TimeInterval) -> String {
+            String(format: "%.2fs", value)
         }
 
         private static func num(_ value: TimeInterval) -> String {
@@ -382,13 +399,36 @@ nonisolated enum PhoneFreeUsage {
                 // and unlock keeps whatever was left, rather than handing out
                 // a fresh minute. With no put-down on record (first run, or an
                 // older state) the guard starts full.
-                if let lastUseEnd,
-                   now.timeIntervalSince(lastUseEnd) >= resetAfter {
+                let gap = lastUseEnd.map { now.timeIntervalSince($0) }
+                let recharged = gap.map { $0 >= resetAfter } ?? true
+
+                if recharged {
                     guardUsed = 0
                 }
 
                 usingSince = now
                 stretchRecorded = false
+
+                let gapText = gap.map { State.secs($0) } ?? "n/a"
+                let guardText = State.secs(guardSeconds)
+                let spentText = State.secs(guardUsed ?? 0)
+                let maxText = State.secs(resetAfter)
+                let frozenText = State.secs(frozenInterval)
+                let stakeText = hasStretchAtStake ? "yes" : "no"
+                let rechargeText = recharged ? "YES" : "no"
+
+                PhoneFreeUsage.log(
+                    "beginUse gap=\(gapText) recharge=\(rechargeText) "
+                        + "guard=\(guardText) spent=\(spentText)/\(maxText) "
+                        + "frozen=\(frozenText) stake=\(stakeText)",
+                    at: now
+                )
+            } else {
+                PhoneFreeUsage.log(
+                    "beginUse (session already open) guard="
+                        + State.secs(guardSeconds),
+                    at: now
+                )
             }
         }
 
@@ -401,19 +441,21 @@ nonisolated enum PhoneFreeUsage {
         /// what shared sessions watch).
         mutating func endUse(at now: Date) {
             guard let usingSince, !isAbandoned(at: now) else {
+                PhoneFreeUsage.log("endUse (no live session / abandoned → settled)", at: now)
                 self = settled(at: now)
                 return
             }
 
             let used = max(0, now.timeIntervalSince(usingSince))
             let available = guardSeconds
+            let shield = available + surplus
 
             // Still inside the shield: the stretch carries on. Shift the away
             // anchor forward by the time the phone was in the hand, so the
             // counter resumes at exactly the value it was paused on. Use past
             // the available guard is paid for out of the bank at one second
             // each.
-            if !stretchRecorded, used < available + surplus {
+            if !stretchRecorded, used < shield {
                 // Spend the guard this stretch already had. Once spent, only
                 // a full guard-length away brings it back.
                 guardUsed = min(resetAfter, (guardUsed ?? 0) + used)
@@ -427,6 +469,15 @@ nonisolated enum PhoneFreeUsage {
 
                 self.usingSince = nil
                 lastUseEnd = now
+
+                PhoneFreeUsage.log(
+                    "endUse IN-GRACE used=\(State.secs(used)) "
+                        + "available=\(State.secs(available)) "
+                        + "surplus=\(State.secs(surplus)) "
+                        + "spent=\(State.secs(guardUsed ?? 0)) "
+                        + "stretchKept=\(State.secs(frozenInterval))",
+                    at: now
+                )
                 return
             }
 
@@ -434,6 +485,17 @@ nonisolated enum PhoneFreeUsage {
             // stretch already recorded while the phone stayed in hand (see
             // `keepAlive`) must not be recorded a second time — and start the
             // counter again from this put-down.
+            let lost = frozenInterval
+
+            PhoneFreeUsage.log(
+                "endUse PAST used=\(State.secs(used)) "
+                    + "shield=\(State.secs(shield)) "
+                    + "recorded=\(stretchRecorded) "
+                    + "losing=\(State.secs(lost)) "
+                    + "guardResetTo=\(State.secs(resetAfter))",
+                at: now
+            )
+
             if !stretchRecorded {
                 let earned = frozenInterval
                 if earned > 0 {
@@ -466,6 +528,7 @@ nonisolated enum PhoneFreeUsage {
             stretchRecorded = false
             guardUsed = nil
             lastUseEnd = now
+            PhoneFreeUsage.log("restart (guard refilled to full)", at: now)
         }
 
         /// The counter starts again from zero right now, recording nothing on
@@ -480,6 +543,7 @@ nonisolated enum PhoneFreeUsage {
             stretchRecorded = false
             guardUsed = nil
             lastUseEnd = now
+            PhoneFreeUsage.log("forget (guard refilled to full)", at: now)
         }
 
         /// Back to a fresh install, with no record of anything — used by
@@ -511,6 +575,12 @@ nonisolated enum PhoneFreeUsage {
                 guardUsed = min(resetAfter, (guardUsed ?? 0) + used)
                 self.lastCheckIn = lastCheckIn.addingTimeInterval(used)
                 surplus = max(0, surplus - max(0, used - available))
+                PhoneFreeUsage.log(
+                    "keepAlive IN-GRACE used=\(State.secs(used)) "
+                        + "available=\(State.secs(available)) "
+                        + "spent=\(State.secs(guardUsed ?? 0))",
+                    at: now
+                )
             } else {
                 // The whole shield is spent, so the run is over and recorded
                 // now — but the number it earned is kept on screen. The
@@ -522,6 +592,12 @@ nonisolated enum PhoneFreeUsage {
                 surplus = 0
                 stretchRecorded = true
                 guardUsed = resetAfter
+                PhoneFreeUsage.log(
+                    "keepAlive PAST used=\(State.secs(used)) "
+                        + "losing=\(State.secs(frozen)) "
+                        + "guardResetTo=\(State.secs(resetAfter))",
+                    at: now
+                )
             }
 
             self.usingSince = now
@@ -558,6 +634,12 @@ nonisolated enum PhoneFreeUsage {
             // An abandoned session has spent the stretch's guard too.
             copy.guardUsed = resetAfter
             copy.lastUseEnd = now
+            PhoneFreeUsage.log(
+                "settled ABANDONED losing="
+                    + "\(State.secs(frozenInterval)) "
+                    + "guardResetTo=\(State.secs(resetAfter))",
+                at: now
+            )
             return copy
         }
 
