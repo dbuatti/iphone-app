@@ -140,9 +140,13 @@ final class PhoneFreeLiveActivityManager {
                 .filter { $0.content.state.countsUp }
 
             // Update every existing away activity so no stale snapshot
-            // survives on the Dynamic Island or Lock Screen.
+            // survives on the Dynamic Island or Lock Screen. Skip the update
+            // when nothing visible changed: an unlock can fire several
+            // syncs in the same breath, and re-pushing identical content
+            // spends the update budget and can stall the next real change.
             if !countsUpActivities.isEmpty {
-                for activity in countsUpActivities {
+                for activity in countsUpActivities
+                where Self.awayContentChanged(from: activity.content.state, to: content.state) {
                     await activity.update(content)
                 }
                 print("showAwayCounter: updated \(countsUpActivities.count) existing activities")
@@ -180,6 +184,23 @@ final class PhoneFreeLiveActivityManager {
                 }
             }
         }.value
+    }
+
+    /// `true` when a push would actually change what the Lock Screen or
+    /// Dynamic Island shows. The away counter renders its own ticking and
+    /// ignores `endDate`, so those are normalised out: an unlock that fires
+    /// several syncs in the same second should not spend several updates.
+    private static func awayContentChanged(
+        from old: PhoneFreeWidgetAttributes.ContentState,
+        to new: PhoneFreeWidgetAttributes.ContentState
+    ) -> Bool {
+        var previous = old
+        var next = new
+        previous.tick = 0
+        next.tick = 0
+        previous.endDate = .distantPast
+        next.endDate = .distantPast
+        return previous != next
     }
 
     /// Takes the away counter off the Lock Screen (turned off in Settings).
