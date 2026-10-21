@@ -131,46 +131,25 @@ final class PhoneFreeLiveActivityManager {
                String(force))
 
         await enqueue {
-            // Clean up any stale/duplicate away activities so the Dynamic
-            // Island and Lock Screen never render an old snapshot.
-            let countsUpActivities = Activity<PhoneFreeWidgetAttributes>.activities
-                .filter { $0.content.state.countsUp }
-            if countsUpActivities.count > 1 {
-                for activity in countsUpActivities {
-                    await activity.end(nil, dismissalPolicy: .immediate)
-                }
-            }
-
             for activity in Activity<PhoneFreeWidgetAttributes>.activities
             where !activity.content.state.countsUp {
                 await activity.end(nil, dismissalPolicy: .immediate)
             }
 
-            let existing = Activity<PhoneFreeWidgetAttributes>.activities
-                .first { $0.content.state.countsUp }
+            let countsUpActivities = Activity<PhoneFreeWidgetAttributes>.activities
+                .filter { $0.content.state.countsUp }
 
-            let startedAt = PhoneFreeUsage.defaults?
-                .object(forKey: Self.counterStartedKey) as? Date
-                ?? .distantPast
-
-            if let existing,
-               !force,
-               now.timeIntervalSince(startedAt) < self.counterRefreshAge,
-               countsUpActivities.count <= 1 {
-                await existing.update(content)
-                print("showAwayCounter: updated existing activity")
+            // Update every existing away activity so no stale snapshot
+            // survives on the Dynamic Island or Lock Screen.
+            if !countsUpActivities.isEmpty {
+                for activity in countsUpActivities {
+                    await activity.update(content)
+                }
+                print("showAwayCounter: updated \\(countsUpActivities.count) existing activities")
                 return
             }
 
-            await existing?.end(nil, dismissalPolicy: .immediate)
-
-            // Give iOS a beat to actually dismiss the ended activity before
-            // requesting a new one — otherwise a stale snapshot can linger on
-            // the Dynamic Island / Lock Screen.
-            if force {
-                try? await Task.sleep(for: .milliseconds(300))
-            }
-
+            // None exists — create one.
             do {
                 _ = try Activity.request(
                     attributes: PhoneFreeWidgetAttributes(name: "PhoneFree"),
