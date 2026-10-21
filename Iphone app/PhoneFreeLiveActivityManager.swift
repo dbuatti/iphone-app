@@ -148,6 +148,8 @@ final class PhoneFreeLiveActivityManager {
                 print("showAwayCounter: updated \(countsUpActivities.count) existing activities")
                 return
             }
+            // None exists — create one.
+            do {
                 _ = try Activity.request(
                     attributes: PhoneFreeWidgetAttributes(name: "PhoneFree"),
                     content: content,
