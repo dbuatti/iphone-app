@@ -340,8 +340,19 @@ final class PhoneFreeStore {
         // stretch the user is about to put at risk.
         let gap = usage.awayInterval(at: now)
 
+        // Coming back to the front is a real absence: the app left the screen,
+        // and the lock that ended the stretch may have landed while it was
+        // suspended and could not watch. Only here may a session the app did
+        // not see be closed and the guard recharged. Every other `beginUse` is
+        // inside one continuous sitting and keeps whatever the guard has left.
+        //
+        // The absence is consumed here: `backgroundedAt` means "when we last
+        // left the screen", so once this return has been handled it must not
+        // make a later call inside the same sitting look like a fresh return.
+        let returnedFromBackground = backgroundedAt != nil
+        backgroundedAt = nil
         isInForeground = true
-        usage.beginUse(at: now)
+        usage.beginUse(at: now, wasBackgrounded: returnedFromBackground)
         save()
 
         forceSyncLockScreenCounter()

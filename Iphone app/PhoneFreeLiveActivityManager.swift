@@ -121,15 +121,23 @@ final class PhoneFreeLiveActivityManager {
         // Diagnostic: print to Xcode console (and os_log at default level so
         // it shows in Console.app without enabling info messages). The summary
         // carries the whole guard budget, so a log alone says whether a fresh
-        // minute was handed out or not.
+        // minute was handed out or not. `surface` says what the Lock Screen and
+        // accessory will actually draw from this push, and whether a later
+        // push is needed to change it — the two things device tests 4 and 5
+        // are looking at with the naked eye.
         let summary = usage.diagnosticSummary(at: now)
+        let surface = Self.surfaceSummary(for: usage, at: now, content: content)
         print("showAwayCounter [\(stateTag(force: force))] \(summary)")
+        print("showAwayCounter   → \(surface)")
         let log = OSLog(subsystem: "com.danielebuattipersonalteam.Iphoneapp",
                         category: "liveactivity")
         os_log("showAwayCounter [%{public}@] %{public}@",
                log: log, type: .default,
                stateTag(force: force),
                summary)
+        os_log("showAwayCounter → %{public}@",
+               log: log, type: .default,
+               surface)
 
         await enqueue {
             for activity in Activity<PhoneFreeWidgetAttributes>.activities
@@ -221,6 +229,75 @@ final class PhoneFreeLiveActivityManager {
     /// content that is about to be pushed.
     private func stateTag(force: Bool) -> String {
         force ? "force" : "sync"
+    }
+
+    /// What the Lock Screen and accessory will actually draw from this push,
+    /// and whether a later push is needed to change it.
+    ///
+    /// This is a diagnostic, not a renderer: it re-derives the widget's own
+    /// phase from the same dates the widget has (`resetsAt`, `guardEndsAt`,
+    /// `startDate`, `stretchRecorded`), so a log alone answers device tests 4
+    /// and 5 without a second device or a screenshot. If it disagrees with
+    /// what the eye sees, the widget's copy of the rule has drifted from the
+    /// state machine's — which is the whole point of printing it.
+    ///
+    /// `later` names the push that will still be required: `guardEndsAt` while
+    /// the guard is holding (the number turns red then), `resetsAt` while the
+    /// session is still unsettled (the held number gives way to an away count
+    /// then), or `-` when this push is the last word on the subject.
+    private static func surfaceSummary(
+        for usage: PhoneFreeUsage.State,
+        at now: Date,
+        content: ActivityContent<PhoneFreeWidgetAttributes.ContentState>
+    ) -> String {
+        let state = content.state
+
+        // No open session: the phone is down and the counter ticks up. No
+        // later push is needed — the ticking is the Lock Screen's own job.
+        guard state.pausedSeconds != nil, let resetsAt = state.resetsAt else {
+            return "away  countsUp  since=\(fmt(state.startDate))  later=-"
+        }
+
+        // Mirrors the widget's `isSettled`: recorded, or past both the reset
+        // and the whole abandon window. Settled is the put-down truth.
+        let abandonAt = state.startDate.addingTimeInterval(
+            PhoneFreeUsage.abandonAfter
+        )
+        let settled = state.stretchRecorded
+            || (now >= resetsAt && now >= abandonAt)
+
+        if settled {
+            let anchor = usage.isUsing(at: now) ? resetsAt : (usage.guardEndsAt ?? resetsAt)
+            return "away  countsUp  since=\(fmt(anchor))  later=-"
+        }
+
+        if let guardEnd = state.guardEndsAt, now < guardEnd {
+            return "hold  guarding  frozen=\(fmt(state.pausedSeconds ?? 0))"
+                + "  endsAt=\(fmt(guardEnd))  later=guardEndsAt"
+        }
+
+        // Past the guard with the session still open: the Lock Screen holds a
+        // static red `-0:00` (it cannot know the put-down moment, so it must
+        // not self-tick), while the Dynamic Island ticks red from zero.
+        let needsPush = "later=resetsAt"
+        return "red  holding-static(-0:00)  islandCountingRed  resetsAt=\(fmt(resetsAt))  \(needsPush)"
+    }
+
+    /// "0:07" / "1:02:33" for a diagnostic line, or "0:00" for a nil date.
+    private static func fmt(_ interval: TimeInterval) -> String {
+        let seconds = max(0, Int(interval.rounded()))
+        let hours = seconds / 3600
+        let minutes = (seconds % 3600) / 60
+        let remainder = seconds % 60
+        return hours > 0
+            ? String(format: "%d:%02d:%02d", hours, minutes, remainder)
+            : String(format: "%d:%02d", minutes, remainder)
+    }
+
+    /// A date as an offset from now, so a log line reads "0:38" not a wall
+    /// clock — the useful fact is how far away the change is.
+    private static func fmt(_ date: Date, from now: Date = Date()) -> String {
+        fmt(date.timeIntervalSince(now))
     }
 
     /// Takes the away counter off the Lock Screen (turned off in Settings).

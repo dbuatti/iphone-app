@@ -398,8 +398,20 @@ nonisolated enum PhoneFreeUsage {
         // MARK: Transitions
 
         /// The phone has been picked up. An open session is kept, so moving
-        /// from one app to another does not restart the grace period.
-        mutating func beginUse(at now: Date) {
+        /// from one app to another does not restart the grace period — and,
+        /// above all, so one continuous sitting in PhoneFree does not keep
+        /// handing out a fresh guard.
+        ///
+        /// - Parameter wasBackgrounded: `true` only when the app actually left
+        ///   the foreground and has now come back. It is the one fact the state
+        ///   cannot derive for itself: `lastUseEnd` is frozen at the last
+        ///   put-down, so a long sitting in the app looks identical to a long
+        ///   absence if that is all you measure. Only a real absence may close
+        ///   a session it did not watch and recharge the guard.
+        mutating func beginUse(
+            at now: Date,
+            wasBackgrounded: Bool = false
+        ) {
             self = settled(at: now)
 
             // A session that is still nominally open but has been sitting
@@ -408,10 +420,17 @@ nonisolated enum PhoneFreeUsage {
             // was genuinely down while `usingSince` kept pointing at an old
             // pick-up. `isAbandoned` will not catch this until the much longer
             // `abandonAfter`, by which point the guard would stay spent
-            // through every ordinary absence. Measure the away gap directly
-            // instead: past a full guard-length since the last put-down, the
-            // stale session is closed here so the refill below can run.
-            if usingSince != nil,
+            // through every ordinary absence.
+            //
+            // This must be gated on the app having actually been away. Without
+            // that gate the close fires *while the user is sitting in the app*:
+            // `lastUseEnd` is the last put-down, so `now - lastUseEnd` grows
+            // past the guard length during any single visit, and every
+            // re-entry (the pill, the app icon) closes a live session and
+            // refills the guard. One sitting, many fresh minutes — the exact
+            // opposite of a budget recharged only by being away.
+            if wasBackgrounded,
+               usingSince != nil,
                let lastUseEnd,
                now.timeIntervalSince(lastUseEnd) >= resetAfter {
                 self.usingSince = nil
@@ -426,10 +445,25 @@ nonisolated enum PhoneFreeUsage {
                 // The guard is a per-stretch budget. Only a genuine away
                 // period — the full guard length — recharges it; a quick lock
                 // and unlock keeps whatever was left, rather than handing out
-                // a fresh minute. With no put-down on record (first run, or an
-                // older state) the guard starts full.
+                // a fresh minute.
+                //
+                // A long enough gap is not on its own evidence of being away:
+                // within one continuous sitting `lastUseEnd` stays at the last
+                // put-down, so `now - lastUseEnd` grows past the guard length
+                // during any visit that lasts a minute — and every re-entry
+                // (the pill, the app icon, a usage-change notification) would
+                // then hand out a fresh minute. The app must actually have left
+                // the screen for the budget to come back.
+                //
+                // With no put-down on record at all — first run, or a state
+                // written before the guard existed — the guard starts full.
                 let gap = lastUseEnd.map { now.timeIntervalSince($0) }
-                let recharged = gap.map { $0 >= resetAfter } ?? true
+                let recharged: Bool
+                if let gap {
+                    recharged = wasBackgrounded && gap >= resetAfter
+                } else {
+                    recharged = true
+                }
 
                 if recharged {
                     guardUsed = 0
@@ -445,9 +479,11 @@ nonisolated enum PhoneFreeUsage {
                 let frozenText = State.secs(frozenInterval)
                 let stakeText = hasStretchAtStake ? "yes" : "no"
                 let rechargeText = recharged ? "YES" : "no"
+                let entryText = wasBackgrounded ? "return" : "re-entry"
 
                 PhoneFreeUsage.log(
-                    "beginUse gap=\(gapText) recharge=\(rechargeText) "
+                    "beginUse [\(entryText)] gap=\(gapText) "
+                        + "recharge=\(rechargeText) "
                         + "guard=\(guardText) spent=\(spentText)/\(maxText) "
                         + "frozen=\(frozenText) stake=\(stakeText)",
                     at: now
