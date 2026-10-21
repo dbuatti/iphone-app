@@ -315,6 +315,8 @@ final class PhoneFreeStore {
         usage.beginUse(at: now)
         save()
 
+        forceSyncLockScreenCounter()
+
         if goalActive {
             guard let end = goalEnd, end > now else { return }
 
@@ -434,7 +436,7 @@ final class PhoneFreeStore {
 
         usage.beginUse(at: now)
         save()
-        syncLockScreenCounter()
+        forceSyncLockScreenCounter()
     }
 
     // MARK: - The lock watchdog
@@ -1398,6 +1400,22 @@ final class PhoneFreeStore {
     }
 
     // MARK: - Data
+
+    func forceSyncLockScreenCounter() {
+        if goalActive,
+           let start = goalStart,
+           let end = goalEnd,
+           end > Date() {
+            syncLockScreenCounter()
+            return
+        }
+        let usage = usage
+        Task {
+            await PhoneFreeLiveActivityManager.shared.showAwayCounter(
+                usage, force: true
+            )
+        }
+    }
 
     /// The windows a fresh install starts with: the overnight one on, because
     /// night is where the most phone use happens, and lunch ready to switch on.

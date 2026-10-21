@@ -107,16 +107,14 @@ final class PhoneFreeLiveActivityManager {
     /// stacking new ones.
     func showAwayCounter(
         _ usage: PhoneFreeUsage.State,
-        now: Date = Date()
+        now: Date = Date(),
+        force: Bool = false
     ) async {
         guard isSupported, Self.liveCounterEnabled else {
             await endAwayCounter()
             return
         }
 
-        // Built now, not when the queue reaches us: whichever sync wins the
-        // race, the number on screen is the one from the moment it was asked
-        // for, and the chain puts the asks in order.
         let content = Self.counterContent(for: usage, at: now)
 
         await enqueue {
@@ -124,6 +122,17 @@ final class PhoneFreeLiveActivityManager {
             for activity in Activity<PhoneFreeWidgetAttributes>.activities
             where !activity.content.state.countsUp {
                 await activity.end(nil, dismissalPolicy: .immediate)
+            }
+
+            // When forcing (lifecycle transitions), end any stale away
+            // counter first so the Dynamic Island and Lock Screen pick up a
+            // fresh activity with the correct in-use content instead of a
+            // reused one whose startDate never moved.
+            if force {
+                for activity in Activity<PhoneFreeWidgetAttributes>.activities
+                where activity.content.state.countsUp {
+                    await activity.end(nil, dismissalPolicy: .immediate)
+                }
             }
 
             let existing = Activity<PhoneFreeWidgetAttributes>.activities
@@ -134,6 +143,7 @@ final class PhoneFreeLiveActivityManager {
                 ?? .distantPast
 
             if let existing,
+               !force,
                now.timeIntervalSince(startedAt) < self.counterRefreshAge {
                 await existing.update(content)
                 return
