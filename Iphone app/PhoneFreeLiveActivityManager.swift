@@ -164,6 +164,13 @@ final class PhoneFreeLiveActivityManager {
 
             await existing?.end(nil, dismissalPolicy: .immediate)
 
+            // Give iOS a beat to actually dismiss the ended activity before
+            // requesting a new one — otherwise a stale snapshot can linger on
+            // the Dynamic Island / Lock Screen.
+            if force {
+                try? await Task.sleep(for: .milliseconds(300))
+            }
+
             do {
                 _ = try Activity.request(
                     attributes: PhoneFreeWidgetAttributes(name: "PhoneFree"),
