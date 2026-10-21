@@ -140,35 +140,14 @@ final class PhoneFreeLiveActivityManager {
                 .filter { $0.content.state.countsUp }
 
             // Update every existing away activity so no stale snapshot
-            // survives on the Dynamic Island or Lock Screen. If the content
-            // type flips (was in-use with pausedSeconds, now away without), end
-            // and recreate to avoid any rendering lag/flicker.
-            var needsRecreate = false
+            // survives on the Dynamic Island or Lock Screen.
             if !countsUpActivities.isEmpty {
-                needsRecreate = countsUpActivities.contains { activity in
-                    let hadPaused = activity.content.state.pausedSeconds != nil
-                    let hasPaused = content.state.pausedSeconds != nil
-                    return hadPaused != hasPaused
+                for activity in countsUpActivities {
+                    await activity.update(content)
                 }
-                if needsRecreate {
-                    for activity in countsUpActivities {
-                        await activity.end(nil, dismissalPolicy: .immediate)
-                    }
-                    // Don't return here - fall through to create fresh
-                } else {
-                    for activity in countsUpActivities {
-                        await activity.update(content)
-                    }
-                    print("showAwayCounter: updated \\(countsUpActivities.count) existing activities")
-                    return
-                }
+                print("showAwayCounter: updated \(countsUpActivities.count) existing activities")
+                return
             }
-
-            // If we just ended activities, give ActivityKit a moment to clean up
-            if needsRecreate {
-                try? await Task.sleep(for: .milliseconds(500))
-            }
-            do {
                 _ = try Activity.request(
                     attributes: PhoneFreeWidgetAttributes(name: "PhoneFree"),
                     content: content,
