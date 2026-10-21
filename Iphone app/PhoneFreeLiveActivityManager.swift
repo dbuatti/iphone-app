@@ -118,13 +118,13 @@ final class PhoneFreeLiveActivityManager {
 
         let content = Self.counterContent(for: usage, at: now)
 
-        // Diagnostic logging — visible in Console.app filtered to this
-        // subsystem. Helps trace why the pill/lock screen disagree with
-        // the app.
+        // Diagnostic: print to Xcode console (and os_log at default level so
+        // it shows in Console.app without enabling info messages).
+        print("showAwayCounter: isUsing=\\(usage.isUsing(at: now)) usingSince=\\(String(describing: usage.usingSince)) pausedSeconds=\\(String(describing: content.state.pausedSeconds)) force=\\(force)")
         let log = OSLog(subsystem: "com.danielebuattipersonalteam.Iphoneapp",
                         category: "liveactivity")
         os_log("showAwayCounter: isUsing=%{public}@ usingSince=%{public}@ pausedSeconds=%{public}@ force=%{public}@",
-               log: log, type: .info,
+               log: log, type: .default,
                String(usage.isUsing(at: now)),
                String(describing: usage.usingSince),
                String(describing: content.state.pausedSeconds),
