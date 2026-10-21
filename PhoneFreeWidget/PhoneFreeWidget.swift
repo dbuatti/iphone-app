@@ -249,14 +249,26 @@ struct PhoneFreeWidgetEntryView: View {
     /// running. Otherwise, while the phone is in use, the counter is frozen
     /// (no live count-up) so the widget shows the held number; when not in use
     /// it counts up from the last check-in.
+    ///
+    /// Past the guard there is deliberately no date: the reading is a held red
+    /// (`accessoryRedHold`), not a live count. The accessory is a Lock Screen
+    /// surface — seen with the phone already down — and PhoneFree may be
+    /// suspended when the phone goes down, so it cannot know the put-down
+    /// moment. A live counter would then run on while the phone is down.
     private var accessoryDate: Date? {
         if activeGoal, let goalEnd = entry.goalEnd {
             return goalEnd
         }
-        if entry.pausedSeconds != nil, !accessoryPastGuard {
+        if entry.pausedSeconds != nil {
             return nil
         }
         return entry.lastCheckIn
+    }
+
+    /// Guard spent: show a plain, held "-0:00" in red rather than a running
+    /// number. The app corrects it on the next push.
+    private var accessoryRedHold: Bool {
+        accessoryPastGuard
     }
 
     private var accessoryIsGoal: Bool {
@@ -291,10 +303,13 @@ struct PhoneFreeWidgetEntryView: View {
         accessoryPastGuard ? coral : .primary
     }
 
-    /// The counter while it is not counting: always the frozen stretch, even
-    /// once the run has ended. The number is never blanked while the phone is
-    /// still in the user's hand.
+    /// The counter while it is not counting: the frozen stretch, or the held
+    /// red reading once the guard is spent. The number is never blanked while
+    /// the phone is still in the user's hand.
     private var stillCounterText: String? {
+        if accessoryRedHold {
+            return "-0:00"
+        }
         if let paused = entry.pausedSeconds {
             return Self.clock(paused)
         }

@@ -351,9 +351,18 @@ struct PhoneFreeWidgetLiveActivity: Widget {
                 // to put the phone back down. Nothing is charged yet.
                 clockText(state.pausedSeconds ?? 0)
             } else {
-                // Guard over: the same negative red count as the Dynamic
-                // Island and the app, running from the end of the guard.
-                Text("-\(countUp(from: state.guardEndsAt ?? state.startDate))")
+                // Guard over: red, from zero — but *frozen* at -0:00, not a
+                // running count. The Lock Screen is the surface you look at
+                // with the phone already down, and PhoneFree may be suspended
+                // (a lock it never saw), so it cannot know the moment the phone
+                // went down. A self-ticking red number would then run negative
+                // for the whole away period — a growing "-4:28" while the phone
+                // is actually down. Holding the red reading is never wrong: the
+                // app corrects it on the next push, which happens the instant
+                // the phone is opened again. The ticking red count belongs to
+                // the Dynamic Island, which is only ever seen while the phone
+                // is unlocked and in hand (`countText`).
+                Text("-0:00")
                     .foregroundStyle(LAColor.coral)
                     .monospacedDigit()
             }
