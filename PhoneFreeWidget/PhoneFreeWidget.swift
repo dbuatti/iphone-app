@@ -24,6 +24,19 @@ struct PhoneFreeEntry: TimelineEntry {
 
     /// The phone is still in use after the grace period: held at zero.
     var heldAtZero = false
+
+    /// When the guard for this stretch runs out. `nil` unless a session is
+    /// open. The accessory families need it to tell the *guard hold* (the away
+    /// number frozen while the pickup is still free) from the state after it —
+    /// where the number is red and counting, exactly as the Live Activity and
+    /// the app draw it. Without it the accessory could only say "paused" over
+    /// a counter the app had already turned red.
+    var guardEndsAt: Date? = nil
+
+    /// The stretch has already been recorded — the run is over even if a
+    /// session is still nominally open (see `hasReset`). Red for the same
+    /// reason `guardEndsAt` has passed.
+    var stretchRecorded = false
 }
 
 struct PhoneFreeProvider: TimelineProvider {
@@ -55,12 +68,14 @@ struct PhoneFreeProvider: TimelineProvider {
         var entries = [loadEntry(at: now)]
 
         // While the phone is in use the counter changes state on a clock — at
-        // the reset, and when an unclosed session is given up on — so those
-        // moments get entries of their own instead of waiting for a refresh.
+        // the guard's end (hold turns red), at the reset, and when an
+        // unclosed session is given up on — so those moments get entries of
+        // their own instead of waiting for a refresh.
         let usage = PhoneFreeUsage.load()
 
         if usage.isUsing(at: now), let usingSince = usage.usingSince {
             let changes = [
+                usage.guardEndsAt,
                 usage.resetsAt,
                 usingSince.addingTimeInterval(PhoneFreeUsage.abandonAfter),
             ]
@@ -155,7 +170,11 @@ struct PhoneFreeProvider: TimelineProvider {
             // medium view's subtext. (`hasReset` implies an open session, so
             // it is always accompanied by `pausedSeconds`.)
             pausedSeconds: using ? usage.frozenInterval : nil,
-            heldAtZero: usage.hasReset(at: now)
+            heldAtZero: usage.hasReset(at: now),
+            // Only a live session has a guard to report. The accessory reads
+            // these to decide hold vs red, the same way the Live Activity does.
+            guardEndsAt: using ? usage.guardEndsAt : nil,
+            stretchRecorded: using ? usage.stretchRecorded : false
         )
     }
 }
@@ -178,6 +197,13 @@ struct PhoneFreeWidgetEntryView: View {
 
     private let lime = Color(
         red: 0.76, green: 1.0, blue: 0.34
+    )
+
+    /// The warning red, identical to the Live Activity's `LAColor.coral`, so
+    /// the Lock Screen, the Dynamic Island and the app all go red in the same
+    /// shade at the same moment.
+    private let coral = Color(
+        red: 0.98, green: 0.49, blue: 0.60
     )
 
     private let background = Color(
@@ -208,6 +234,17 @@ struct PhoneFreeWidgetEntryView: View {
     // is the whole point: the number has to be in front of them at the moment
     // they reach for the phone. Unlike a Live Activity they never expire.
 
+    /// `true` once the current stretch has passed its guard — the point the
+    /// app and the Live Activity both turn red. Mirrors the Live Activity's
+    /// `counterPhase`: no guard left, or the stretch already recorded, means
+    /// red. Anything else with an open session is still a free hold.
+    private var accessoryPastGuard: Bool {
+        guard entry.pausedSeconds != nil else { return false }
+        if entry.stretchRecorded { return true }
+        guard let guardEnd = entry.guardEndsAt else { return true }
+        return entry.date >= guardEnd
+    }
+
     /// The date the accessory families count from: a goal's end when one is
     /// running. Otherwise, while the phone is in use, the counter is frozen
     /// (no live count-up) so the widget shows the held number; when not in use
@@ -216,7 +253,7 @@ struct PhoneFreeWidgetEntryView: View {
         if activeGoal, let goalEnd = entry.goalEnd {
             return goalEnd
         }
-        if entry.pausedSeconds != nil {
+        if entry.pausedSeconds != nil, !accessoryPastGuard {
             return nil
         }
         return entry.lastCheckIn
@@ -227,20 +264,31 @@ struct PhoneFreeWidgetEntryView: View {
     }
 
     private var accessorySymbol: String {
-        accessoryIsGoal ? "hourglass" : "iphone.slash"
+        if accessoryIsGoal { return "hourglass" }
+        if accessoryPastGuard { return "iphone" }
+        return "iphone.slash"
     }
 
     /// The wording above the counter, shared by the Lock Screen and Home
     /// Screen families. While a session is open the number is paused, so the
     /// caption says so wherever it shows — it must never claim "since you
     /// last used your phone" over a counter that is paused *because* the
-    /// phone is in the hand. (`heldAtZero` implies the session is open, so
-    /// the paused wording covers the past-reset state too; the medium view's
-    /// subtext still distinguishes it.)
+    /// phone is in the hand. Past the guard the number is running again, so
+    /// the caption says what the number now means.
     private var counterCaption: String {
         if accessoryIsGoal { return "TIME LEFT TO YOUR GOAL" }
-        if entry.pausedSeconds != nil { return "PAUSED — ON YOUR PHONE" }
+        if entry.pausedSeconds != nil {
+            return accessoryPastGuard
+                ? "ON YOUR PHONE"
+                : "PAUSED — ON YOUR PHONE"
+        }
         return "SINCE YOU LAST USED YOUR PHONE"
+    }
+
+    /// Red once the guard is spent — the same warning colour the app and the
+    /// Live Activity use, so all three surfaces agree at a glance.
+    private var accessoryTint: Color {
+        accessoryPastGuard ? coral : .primary
     }
 
     /// The counter while it is not counting: always the frozen stretch, even
@@ -309,6 +357,7 @@ struct PhoneFreeWidgetEntryView: View {
         VStack(spacing: 0) {
             Image(systemName: accessorySymbol)
                 .font(.system(size: 10, weight: .semibold))
+                .foregroundStyle(accessoryTint)
 
             text
                 .font(
@@ -319,6 +368,9 @@ struct PhoneFreeWidgetEntryView: View {
                     )
                 )
                 .monospacedDigit()
+                .foregroundStyle(
+                    accessoryPastGuard ? accessoryTint : .primary
+                )
                 .lineLimit(1)
                 .minimumScaleFactor(0.45)
         }
@@ -328,6 +380,7 @@ struct PhoneFreeWidgetEntryView: View {
         VStack(alignment: .leading, spacing: 0) {
             Text(counterCaption)
                 .font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(accessoryTint)
                 .lineLimit(1)
                 .minimumScaleFactor(0.7)
 
@@ -341,6 +394,9 @@ struct PhoneFreeWidgetEntryView: View {
                         )
                     )
                     .monospacedDigit()
+                    .foregroundStyle(
+                        accessoryPastGuard ? accessoryTint : .primary
+                    )
                     .lineLimit(1)
                     .minimumScaleFactor(0.6)
             } else if let still = stillCounterText {
@@ -355,7 +411,9 @@ struct PhoneFreeWidgetEntryView: View {
                         )
                     )
                     .monospacedDigit()
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(
+                        accessoryPastGuard ? accessoryTint : .secondary
+                    )
                     .lineLimit(1)
                     .minimumScaleFactor(0.6)
             } else {
@@ -393,6 +451,7 @@ struct PhoneFreeWidgetEntryView: View {
                 Label("Start a phone-free goal", systemImage: "iphone.slash")
             }
         }
+        .foregroundStyle(accessoryPastGuard ? accessoryTint : .primary)
     }
 
     // MARK: - Home Screen (system) families
@@ -444,7 +503,9 @@ struct PhoneFreeWidgetEntryView: View {
                             )
                         )
                         .monospacedDigit()
-                        .foregroundStyle(violet.opacity(0.6))
+                        .foregroundStyle(
+                            accessoryPastGuard ? coral : violet.opacity(0.6)
+                        )
                         .lineLimit(1)
                         .minimumScaleFactor(0.55)
 
