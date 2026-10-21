@@ -323,7 +323,7 @@ struct PhoneFreeWidgetLiveActivity: Widget {
             // While the phone is in use, the Lock Screen activity (visible
             // when swiping down) shows the same negative red count as the
             // Dynamic Island and the app.
-            (Text("-") + Text(state.startDate, style: .timer))
+            Text("-\(Text(state.startDate, style: .timer))")
                 .foregroundStyle(LAColor.coral)
                 .monospacedDigit()
         } else if state.pausedSeconds != nil {
@@ -581,7 +581,7 @@ struct PhoneFreeWidgetLiveActivity: Widget {
             // `Text(date, style: .timer)` ticks by itself, so no per-second
             // activity push is needed — those would queue up and delay the
             // switch back to the away counter at lock.
-            (Text("-") + Text(state.startDate, style: .timer))
+            Text("-\(Text(state.startDate, style: .timer))")
                 .foregroundStyle(LAColor.coral)
                 .monospacedDigit()
         } else if state.countsUp {
