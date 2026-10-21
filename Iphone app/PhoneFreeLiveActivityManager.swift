@@ -143,8 +143,9 @@ final class PhoneFreeLiveActivityManager {
             // survives on the Dynamic Island or Lock Screen. If the content
             // type flips (was in-use with pausedSeconds, now away without), end
             // and recreate to avoid any rendering lag/flicker.
+            var needsRecreate = false
             if !countsUpActivities.isEmpty {
-                let needsRecreate = countsUpActivities.contains { activity in
+                needsRecreate = countsUpActivities.contains { activity in
                     let hadPaused = activity.content.state.pausedSeconds != nil
                     let hasPaused = content.state.pausedSeconds != nil
                     return hadPaused != hasPaused
@@ -153,6 +154,7 @@ final class PhoneFreeLiveActivityManager {
                     for activity in countsUpActivities {
                         await activity.end(nil, dismissalPolicy: .immediate)
                     }
+                    // Don't return here - fall through to create fresh
                 } else {
                     for activity in countsUpActivities {
                         await activity.update(content)
@@ -162,7 +164,10 @@ final class PhoneFreeLiveActivityManager {
                 }
             }
 
-            // None exists — create one.
+            // If we just ended activities, give ActivityKit a moment to clean up
+            if needsRecreate {
+                try? await Task.sleep(for: .milliseconds(500))
+            }
             do {
                 _ = try Activity.request(
                     attributes: PhoneFreeWidgetAttributes(name: "PhoneFree"),
