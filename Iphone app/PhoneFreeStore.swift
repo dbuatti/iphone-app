@@ -255,6 +255,18 @@ final class PhoneFreeStore {
     /// would otherwise suspend the app seconds after it leaves the screen.
     @ObservationIgnored private var lockWatchdogAssertion: UIBackgroundTaskIdentifier = .invalid
 
+    /// iOS reports "unlocked" the moment Face ID recognises the user, even
+    /// while the Lock Screen is still up. A use session therefore has to be
+    /// confirmed: it only really starts if the phone stays unlocked for
+    /// `unlockConfirmDelay`, or if the user leaves PhoneFree for another app
+    /// (proof they are past the Lock Screen).
+    @ObservationIgnored private var pendingUseStart: Task<Void, Never>?
+    private var pendingUseSince: Date?
+
+    /// How long an unlock has to hold before it counts as the phone being in
+    /// use. Brief Face ID glances at the Lock Screen stay as away time.
+    private let unlockConfirmDelay: TimeInterval = 5
+
     /// Below this, opening the app is just the app; it is not worth friction.
     private let checkInGateThreshold: TimeInterval = 60
 
@@ -273,6 +285,10 @@ final class PhoneFreeStore {
     func handleBecameActive() {
         // The app is awake again, so the watchdog has nothing left to catch.
         stopLockWatchdog()
+
+        // PhoneFree being on screen is proof the phone is in use — no need to
+        // wait out the unlock grace.
+        cancelPendingUseStart()
 
         // The app's own observers watch from here on; the periodic
         // background check would only burn refresh budget waking a process
@@ -379,6 +395,11 @@ final class PhoneFreeStore {
         wasLockedWhileAway = false
 
         if UIApplication.shared.isProtectedDataAvailable {
+            // Leaving PhoneFree while the device is still unlocked means the
+            // user is past the Lock Screen and into another app: that is proof
+            // of use, so the unlock does not need to wait out its grace.
+            confirmPendingUseStart()
+
             // Still unlocked: still in use. The session stays open, so the
             // counter freezes rather than counting up. There is now other-app
             // time at stake, so the countdown reminders run it home.
@@ -409,6 +430,7 @@ final class PhoneFreeStore {
     /// counting the time away again from this moment.
     func handleDeviceLocked() {
         stopLockWatchdog()
+        cancelPendingUseStart()
 
         let now = Date()
         wasLockedWhileAway = true
@@ -419,9 +441,11 @@ final class PhoneFreeStore {
         syncLockScreenCounter()
     }
 
-    /// The device unlocked: the phone is back in hand. The use session
-    /// starts so the counter freezes — but `lastCheckIn` is left untouched,
-    /// so the away gap the check-in gate reports is still the honest one.
+    /// The device unlocked. This is *not* proof the phone is in use: iOS
+    /// reports it the instant Face ID recognises the user, while the Lock
+    /// Screen is still up. So the away counter keeps running and a use
+    /// session is only confirmed if the unlock holds (see
+    /// `confirmPendingUseStart`).
     func handleDeviceUnlocked() {
         stopLockWatchdog()
 
@@ -436,9 +460,49 @@ final class PhoneFreeStore {
         wasLockedWhileAway = true
         closeSessionInterruptedByLock(at: now)
 
-        usage.beginUse(at: now)
+        // Already considered in use: nothing to wait for.
+        guard !usage.isUsing(at: now) else {
+            forceSyncLockScreenCounter()
+            return
+        }
+
+        cancelPendingUseStart()
+        pendingUseSince = now
+        pendingUseStart = Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .seconds(self?.unlockConfirmDelay ?? 5))
+            guard let self, !Task.isCancelled else { return }
+            guard UIApplication.shared.isProtectedDataAvailable else {
+                self.cancelPendingUseStart()
+                return
+            }
+            self.confirmPendingUseStart()
+        }
+
+        // Keep the Lock Screen counting up while the unlock is unconfirmed.
         save()
         forceSyncLockScreenCounter()
+    }
+
+    /// An unlock held long enough (or the user left PhoneFree while the device
+    /// stayed unlocked): the phone really is in use. The session starts from
+    /// the unlock moment, not from now, so the red count is honest.
+    private func confirmPendingUseStart() {
+        guard let since = pendingUseSince else { return }
+        cancelPendingUseStart()
+
+        let now = Date()
+        guard !usage.isUsing(at: now) else { return }
+        guard UIApplication.shared.isProtectedDataAvailable else { return }
+
+        usage.beginUse(at: since)
+        save()
+        forceSyncLockScreenCounter()
+    }
+
+    private func cancelPendingUseStart() {
+        pendingUseStart?.cancel()
+        pendingUseStart = nil
+        pendingUseSince = nil
     }
 
     // MARK: - The lock watchdog
