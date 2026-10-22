@@ -90,7 +90,7 @@ struct PhoneFreeWidgetLiveActivity: Widget {
                     } else {
                         Image(systemName: "iphone.slash")
                             .font(.title3)
-                            .foregroundStyle(LAColor.violet)
+                            .foregroundStyle(LAColor.lime)
                     }
                 }
 
@@ -124,7 +124,7 @@ struct PhoneFreeWidgetLiveActivity: Widget {
                         .foregroundStyle(phaseTint(phase))
                 } else {
                     Image(systemName: "iphone.slash")
-                        .foregroundStyle(LAColor.violet)
+                        .foregroundStyle(LAColor.lime)
                 }
 
             } compactTrailing: {
@@ -148,7 +148,7 @@ struct PhoneFreeWidgetLiveActivity: Widget {
                         .foregroundStyle(LAColor.lime)
                 } else {
                     Image(systemName: "iphone.slash")
-                        .foregroundStyle(LAColor.violet)
+                        .foregroundStyle(LAColor.lime)
                 }
             }
             .keylineTint(
@@ -508,14 +508,14 @@ struct PhoneFreeWidgetLiveActivity: Widget {
                         )
                     )
                     .stroke(
-                        LAColor.violet,
+                        LAColor.lime,
                         style: StrokeStyle(lineWidth: 6, lineCap: .round)
                     )
                     .rotationEffect(.degrees(-90))
 
                 Image(systemName: "iphone.slash")
                     .font(.system(size: 20, weight: .bold))
-                    .foregroundStyle(LAColor.violet)
+                    .foregroundStyle(LAColor.lime)
             }
             .frame(width: 68, height: 68)
 
@@ -598,7 +598,7 @@ struct PhoneFreeWidgetLiveActivity: Widget {
                     Text("PHONEFREE")
                         .font(.system(size: 10, weight: .bold))
                         .tracking(2)
-                        .foregroundStyle(LAColor.violet)
+                        .foregroundStyle(LAColor.lime)
 
                     Text(
                         coachMessage(

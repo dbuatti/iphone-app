@@ -301,14 +301,14 @@ struct PhoneFreeAwayView: View {
 
                 VStack(spacing: 18) {
                     if store.progressStyle == .ring {
-                        PhoneFreeRingMeter(progress: progress) {
+                        PhoneFreeRingMeter(progress: progress, tint: PhoneFreeTheme.reward) {
                             goalNumber(remaining)
                         }
                     } else {
                         goalNumber(remaining)
 
                         if store.progressStyle == .bar {
-                            PhoneFreeBarMeter(progress: progress)
+                            PhoneFreeBarMeter(progress: progress, tint: PhoneFreeTheme.reward)
                                 .accessibilityLabel("Goal progress")
                         }
                     }
@@ -324,7 +324,7 @@ struct PhoneFreeAwayView: View {
                     )
                     .multilineTextAlignment(.center)
                     .font(.footnote.weight(.medium))
-                    .foregroundStyle(PhoneFreeTheme.accent)
+                    .foregroundStyle(PhoneFreeTheme.reward)
 
                     gapTargetBlock(at: context.date)
                 }
@@ -366,7 +366,7 @@ struct PhoneFreeAwayView: View {
                 .monospacedDigit()
                 .minimumScaleFactor(0.4)
                 .lineLimit(1)
-                .foregroundStyle(.white)
+                .foregroundStyle(PhoneFreeTheme.reward)
                 .accessibilityLabel(
                     "\(PhoneFreeFormat.spoken(remaining)) remaining"
                 )
