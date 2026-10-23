@@ -787,6 +787,13 @@ nonisolated enum PhoneFreeUsage {
             // so the counter keeps counting from the true put-down.
             guard witnessed else { return }
 
+            // Once the stretch has been recorded past the guard — the session is
+            // in its terminal red-counting phase: do no more bookkeeping until the
+            // phone goes down and the session is reset. Without this, the PAST
+            // branch re-fires every tick (every second), re-logging and
+            // re-recording the same stretch endlessly.
+            guard !stretchRecorded else { return }
+
             let used = now.timeIntervalSince(usingSince)
             let available = guardSeconds
 
